@@ -3,7 +3,7 @@ import { CATEGORIES, TOOLS } from '@/lib/tools';
 
 export function Footer() {
   return (
-    <footer className="mt-24 border-t">
+    <footer className="somente-site mt-24 border-t">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_2fr]">
         <div>
           <p className="text-lg font-semibold tracking-tight">

@@ -6,7 +6,7 @@ import { TOOLS } from '@/lib/tools';
 export default function HomePage() {
   return (
     <>
-      <section className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
+      <section className="somente-site mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
         <div className="mx-auto max-w-3xl text-center">
           <span className="chip animate-fade-up border-brand/30 text-brand">
             <CloudOff className="h-3.5 w-3.5" /> Seu PDF nunca sai do seu computador
@@ -68,7 +68,7 @@ export default function HomePage() {
 
       <ToolGrid />
 
-      <section id="como-funciona" className="mx-auto mt-28 max-w-6xl scroll-mt-24 px-4 sm:px-6">
+      <section id="como-funciona" className="somente-site mx-auto mt-28 max-w-6xl scroll-mt-24 px-4 sm:px-6">
         <div className="max-w-2xl">
           <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Como funciona</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted sm:text-base">
@@ -104,7 +104,7 @@ export default function HomePage() {
         </ol>
       </section>
 
-      <section className="mx-auto mt-28 max-w-6xl px-4 sm:px-6">
+      <section className="somente-site mx-auto mt-28 max-w-6xl px-4 sm:px-6">
         <div
           className="card overflow-hidden p-8 text-center sm:p-14"
           style={{

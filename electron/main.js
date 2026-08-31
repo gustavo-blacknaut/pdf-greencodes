@@ -79,10 +79,19 @@ function subirServidor() {
         return;
       }
 
-      res.writeHead(200, {
-        'Content-Type': TIPOS[path.extname(arquivo).toLowerCase()] || 'application/octet-stream',
-        'Cache-Control': 'no-store',
-      });
+      const tipo = TIPOS[path.extname(arquivo).toLowerCase()] || 'application/octet-stream';
+
+      // O HTML sai com `data-app` marcado no <html>. Fazer isso aqui, e não no
+      // JavaScript da página, evita o piscar: a interface já nasce no modo
+      // aplicativo, sem navbar de site nem seções de apresentação.
+      if (tipo.startsWith('text/html')) {
+        const html = fs.readFileSync(arquivo, 'utf8').replace('<html ', '<html data-app="1" ');
+        res.writeHead(200, { 'Content-Type': tipo, 'Cache-Control': 'no-store' });
+        res.end(html);
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': tipo, 'Cache-Control': 'no-store' });
       fs.createReadStream(arquivo).pipe(res);
     });
 

@@ -262,3 +262,20 @@ input[type='range']::-moz-range-thumb {
     transition-duration: 0.001ms !important;
   }
 }
+
+/*
+ * Modo aplicativo.
+ *
+ * O Electron marca o <html> com data-app antes de entregar a pagina. No app
+ * nao existe visitante para convencer: quem abriu ja instalou. Entao some
+ * tudo que e de site (apresentacao, menu de navegacao, rodape) e fica so a
+ * logo e as ferramentas.
+ */
+[data-app] .somente-site {
+  display: none !important;
+}
+
+/* Sem o hero, a grade encosta no topo. */
+[data-app] #ferramentas {
+  padding-top: 1.5rem;
+}

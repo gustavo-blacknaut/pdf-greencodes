@@ -54,11 +54,12 @@ export function Header() {
             <span className="text-brand">PDF</span>
             <span className="text-muted">.</span>
             GreenCodes
-            <span className="hidden text-sm font-normal text-muted sm:inline">.com.br</span>
+            {/* No aplicativo o endereco nao serve de nada: quem abriu ja instalou. */}
+            <span className="somente-site hidden text-sm font-normal text-muted sm:inline">.com.br</span>
           </span>
         </Link>
 
-        <nav className="ml-auto hidden items-center gap-1 md:flex">
+        <nav className="somente-site ml-auto hidden items-center gap-1 md:flex">
           <Link href="/#ferramentas" className="rounded-lg px-3 py-2 text-sm text-muted transition hover:text-ink">
             Ferramentas
           </Link>
@@ -82,14 +83,14 @@ export function Header() {
           <Link
             href="/#ferramentas"
             onPointerEnter={() => void warmEngine()}
-            className="btn-primary hidden sm:inline-flex"
+            className="somente-site btn-primary hidden sm:inline-flex"
           >
             <LayoutGrid className="h-4 w-4" /> Ver ferramentas
           </Link>
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="grid h-9 w-9 place-items-center rounded-xl border text-muted md:hidden"
+            className="somente-site grid h-9 w-9 place-items-center rounded-xl border text-muted md:hidden"
             aria-label="Abrir menu"
             aria-expanded={open}
           >

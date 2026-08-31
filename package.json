@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "app:dev": "npm run build && electron .",
-    "app:build": "npm run build && electron-builder --win --publish never"
+    "app:build": "npm run build && node scripts/empacotar.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",
@@ -29,6 +29,7 @@
     "@types/react-dom": "^19.0.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
+    "rcedit": "^5.0.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
@@ -76,5 +77,8 @@
         "description": "Abrir no PDF.GreenCodes"
       }
     ]
+  },
+  "author": {
+    "name": "GreenCodes"
   }
 }
