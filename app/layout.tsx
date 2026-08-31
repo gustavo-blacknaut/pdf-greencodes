@@ -29,13 +29,15 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f6faf7' },
+    { media: '(prefers-color-scheme: light)', color: '#070f0b' },
     { media: '(prefers-color-scheme: dark)', color: '#070f0b' },
   ],
 };
 
 // Aplica o tema antes da primeira pintura para não piscar branco no modo escuro.
-const themeScript = `(function(){try{var t=localStorage.getItem('greencodes-theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
+// Escuro é o padrão da casa: só o modo claro precisa ser escolhido, e a escolha
+// fica salva. Sem isso a página piscaria branco antes do React montar.
+const themeScript = `(function(){try{var t=localStorage.getItem('greencodes-theme');document.documentElement.classList.toggle('dark',t!=='light');}catch(e){document.documentElement.classList.add('dark');}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -60,6 +62,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             "font-src 'self' data:",
             "worker-src 'self' blob:",
             "connect-src 'self' blob: data:",
+            "frame-src 'none'",
+            "manifest-src 'self'",
+            "media-src 'self' blob:",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'none'",

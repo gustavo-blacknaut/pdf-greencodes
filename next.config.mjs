@@ -9,11 +9,16 @@ const nextConfig = {
    */
   output: 'export',
 
-  // pdf.js resolve o worker por `new URL(...)`; o alias evita que o webpack
-  // tente empacotar o canvas do Node, que só existe no servidor.
-  webpack: (config) => {
-    config.resolve.alias.canvas = false;
-    return config;
+  /**
+   * Turbopack é o empacotador padrão a partir do Next 16. O alias abaixo faz o
+   * mesmo papel que a configuração antiga do webpack: evita que a dependência
+   * opcional `canvas` do pdfjs-dist, que só existe no Node, seja procurada no
+   * pacote do navegador.
+   */
+  turbopack: {
+    resolveAlias: {
+      canvas: './lib/vazio.js',
+    },
   },
 };
 

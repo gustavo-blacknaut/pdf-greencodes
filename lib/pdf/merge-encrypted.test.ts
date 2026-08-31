@@ -110,6 +110,35 @@ describe('juntar PDF protegido', () => {
     expect(reaberto.getPageCount()).toBe(1);
   });
 
+  it('pinta o fundo branco atrás do conteúdo, e não por cima', async () => {
+    const { PDFDocument, StandardFonts, rgb, PDFName } = await pdfLib();
+
+    // Página com grupo de transparência e sem fundo: some ao juntar.
+    const origem = await PDFDocument.create();
+    const fonte = await origem.embedFont(StandardFonts.Helvetica);
+    const pagina = origem.addPage([400, 300]);
+    pagina.drawText(MARCADOR, { x: 20, y: 150, size: 14, font: fonte, color: rgb(0, 0, 0) });
+    pagina.node.set(
+      PDFName.of('Group'),
+      origem.context.obj({ Type: 'Group', S: 'Transparency', CS: 'DeviceRGB' }),
+    );
+
+    const doc = await PDFDocument.load(await origem.save(), { password: '' });
+    const saida = await PDFDocument.create();
+    const [copiada] = await saida.copyPages(doc, [0]);
+    saida.addPage(copiada);
+
+    const caixa = copiada.getMediaBox();
+    const fundo = saida.context.register(
+      saida.context.flateStream(`q 1 1 1 rg ${caixa.x} ${caixa.y} ${caixa.width} ${caixa.height} re f Q\n`),
+    );
+    const vazio = saida.context.register(saida.context.flateStream(''));
+    expect(copiada.node.wrapContentStreams(fundo, vazio)).toBe(true);
+
+    // O texto continua lá: o branco entrou por baixo, não por cima.
+    expect(await textoDo(await saida.save())).toContain(MARCADOR);
+  });
+
   it('demonstra por que ignoreEncryption não serve', async () => {
     const { PDFDocument } = await pdfLib();
     const protegido = await gerarPdf({ ownerPassword: 'dono-secreto' });

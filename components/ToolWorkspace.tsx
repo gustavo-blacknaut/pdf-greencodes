@@ -427,9 +427,9 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           </div>
         )
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[1.15fr_1fr] lg:items-start">
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[1.15fr_1fr] lg:items-start">
           {/* Arquivos */}
-          <div className="card p-4 sm:p-5">
+          <div className="card min-w-0 p-4 sm:p-5">
             <div className="mb-3 flex items-baseline justify-between gap-3">
               <h2 className="text-sm font-semibold tracking-tight">
                 {items.length} arquivo{items.length > 1 ? 's' : ''}
@@ -569,7 +569,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           </div>
 
           {/* Opções + ação */}
-          <div className="card space-y-5 p-4 sm:p-5 lg:sticky lg:top-24">
+          <div className="card min-w-0 space-y-5 p-4 sm:p-5 lg:sticky lg:top-24">
             {visibleFields.length > 0 ? (
               <>
                 <h2 className="text-sm font-semibold tracking-tight">Opções</h2>
