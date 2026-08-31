@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Download, Info, RotateCcw, Timer, Trash2 } from 'lucide-react';
+import { CheckCircle2, Download, HardDrive, Info, RotateCcw, Save, Timer, Trash2 } from 'lucide-react';
 import { vault } from '@/lib/ephemeral';
 import { zipFiles, type RunResult } from '@/lib/pdf/engine';
 import { cx, formatBytes, formatDuration } from '@/lib/utils';
+import { estaNoAplicativo, revelarNoExplorador, salvarArquivo, salvarVarios } from '@/lib/desktop';
 
 export function ResultPanel({
   entryId,
@@ -23,10 +24,16 @@ export function ResultPanel({
     return entry ? entry.expiresAt - Date.now() : 0;
   });
   const [zipping, setZipping] = useState(false);
+  // No aplicativo o resultado vai para o disco, então não há download nem
+  // contagem regressiva: o arquivo é seu e fica onde você mandar.
+  const [noApp, setNoApp] = useState(false);
+  const [salvoEm, setSalvoEm] = useState<string | null>(null);
   const [bulkDownloaded, setBulkDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => vault.subscribe(() => force((n) => n + 1)), []);
+
+  useEffect(() => setNoApp(estaNoAplicativo()), []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -67,6 +74,24 @@ export function ResultPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Falha ao baixar.');
     }
+  }
+
+  /** No aplicativo: diálogo nativo de salvar, arquivo direto no disco. */
+  async function salvarUm(fileName: string) {
+    setError(null);
+    const arquivo = entry!.files.find((f) => f.name === fileName);
+    if (!arquivo) return;
+    const r = await salvarArquivo(arquivo.name, arquivo.blob);
+    if (r.ok && r.caminho) setSalvoEm(r.caminho);
+    else if (r.erro) setError(r.erro);
+  }
+
+  async function salvarTodos() {
+    setError(null);
+    if (entry!.files.length === 1) return salvarUm(entry!.files[0].name);
+    const r = await salvarVarios(entry!.files.map((f) => ({ nome: f.name, blob: f.blob })));
+    if (r.ok && r.pasta) setSalvoEm(r.pasta);
+    else if (r.erro) setError(r.erro);
   }
 
   async function downloadAll() {
@@ -113,10 +138,16 @@ export function ResultPanel({
           </p>
         </div>
 
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs tabular-nums text-muted">
-          <Timer className="h-3.5 w-3.5" />
-          apaga em {formatDuration(remaining)}
-        </span>
+        {noApp ? (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs text-brand">
+            <HardDrive className="h-3.5 w-3.5" /> salve onde quiser
+          </span>
+        ) : (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs tabular-nums text-muted">
+            <Timer className="h-3.5 w-3.5" />
+            apaga em {formatDuration(remaining)}
+          </span>
+        )}
       </div>
 
       {shrank && (
@@ -141,12 +172,14 @@ export function ResultPanel({
               </div>
               <button
                 type="button"
-                onClick={() => downloadOne(file.name)}
-                className={cx('btn-ghost shrink-0 px-3 py-2', done && 'text-brand')}
-                title={done ? 'Baixa outra cópia e apaga o arquivo da memória' : undefined}
+                onClick={() => (noApp ? salvarUm(file.name) : downloadOne(file.name))}
+                className={cx('btn-ghost shrink-0 px-3 py-2', !noApp && done && 'text-brand')}
+                title={!noApp && done ? 'Baixa outra cópia e apaga o arquivo da memória' : undefined}
               >
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">{done ? 'Baixar de novo' : 'Baixar'}</span>
+                {noApp ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                <span className="hidden sm:inline">
+                  {noApp ? 'Salvar como...' : done ? 'Baixar de novo' : 'Baixar'}
+                </span>
               </button>
             </li>
           );
@@ -164,25 +197,49 @@ export function ResultPanel({
         </div>
       )}
 
+      {salvoEm && (
+        <div className="flex flex-wrap items-center gap-2 border-t bg-brand/5 px-5 py-3 text-xs text-brand">
+          <Save className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Salvo em {salvoEm}</span>
+          <button
+            type="button"
+            onClick={() => revelarNoExplorador(salvoEm)}
+            className="shrink-0 underline underline-offset-2 hover:no-underline"
+          >
+            Mostrar na pasta
+          </button>
+        </div>
+      )}
+
       {error && <p className="border-t px-5 py-3 text-xs text-rose-500">{error}</p>}
 
       <div className="border-t px-5 py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={downloadAll} disabled={zipping} className="btn-primary">
-            <Download className="h-4 w-4" />
-            {entry.files.length > 1
-              ? zipping
-                ? 'Compactando...'
-                : bulkDownloaded
-                  ? 'Baixar tudo de novo (.zip)'
-                  : 'Baixar tudo (.zip)'
-              : anyDownloaded
-                ? 'Baixar de novo'
-                : 'Baixar'}
+          <button
+            type="button"
+            onClick={noApp ? salvarTodos : downloadAll}
+            disabled={zipping}
+            className="btn-primary"
+          >
+            {noApp ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+            {noApp
+              ? entry.files.length > 1
+                ? 'Salvar todos numa pasta'
+                : 'Salvar como...'
+              : entry.files.length > 1
+                ? zipping
+                  ? 'Compactando...'
+                  : bulkDownloaded
+                    ? 'Baixar tudo de novo (.zip)'
+                    : 'Baixar tudo (.zip)'
+                : anyDownloaded
+                  ? 'Baixar de novo'
+                  : 'Baixar'}
           </button>
           <button type="button" onClick={onReset} className="btn-ghost">
             <RotateCcw className="h-4 w-4" /> Novo arquivo
           </button>
+          {!noApp && (
           <button
             type="button"
             onClick={() => vault.purge(entryId, 'manual')}
@@ -190,12 +247,19 @@ export function ResultPanel({
           >
             <Trash2 className="h-4 w-4" /> Apagar agora
           </button>
+          )}
         </div>
 
         <p className="mt-3 text-[11px] leading-relaxed text-muted">
+          {noApp ? (
+            <>Você escolhe a pasta. O arquivo fica no seu disco, sem prazo para expirar.</>
+          ) : (
+            <>
           Baixar guarda o arquivo no seu computador e mantém a cópia aqui até o tempo acabar.{' '}
           <strong className="font-medium text-ink">Baixar de novo</strong> entrega mais uma cópia e apaga esta da
           memória na hora.
+            </>
+          )}
         </p>
       </div>
     </div>

@@ -35,6 +35,7 @@ import { LIMITES, OperacaoCancelada, validarFila } from '@/lib/pdf/guards';
 import { getEngineStatus, subscribeEngineStatus, warmEngine, type EngineStatus } from '@/lib/pdf/lazy';
 import { defaultOptions, isFieldVisible, type BoardMode, type Tool } from '@/lib/tools';
 import { cx, formatBytes } from '@/lib/utils';
+import { aoReceberArquivosDoSistema } from '@/lib/desktop';
 
 const BOARD_HINTS: Record<BoardMode, string> = {
   organize: 'Arraste as miniaturas para reordenar. Passe o mouse numa página para girar ou excluir.',
@@ -147,6 +148,10 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
     },
     [tool.accept, tool.acceptLabel, tool.multiple, items],
   );
+
+  // No aplicativo, arquivo aberto pelo Explorador ou pelo menu do botao
+  // direito entra direto na ferramenta que estiver na tela.
+  useEffect(() => aoReceberArquivosDoSistema(addFiles), [addFiles]);
 
   /** Destrava um PDF protegido com a senha que a pessoa digitou. */
   async function destravar(id: string, senha: string) {

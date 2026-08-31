@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "app:dev": "npm run build && electron .",
-    "app:build": "npm run build && electron-builder --win"
+    "app:build": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",
@@ -64,7 +64,17 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "PDF.GreenCodes"
-    }
+      "createStartMenuShortcut": true,
+      "shortcutName": "PDF.GreenCodes",
+      "deleteAppDataOnUninstall": true
+    },
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "Documento PDF",
+        "role": "Editor",
+        "description": "Abrir no PDF.GreenCodes"
+      }
+    ]
   }
 }
