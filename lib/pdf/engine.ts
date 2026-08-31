@@ -345,6 +345,29 @@ export async function renderPaginaParaEditor(
   }
 }
 
+/**
+ * Pinta um retângulo branco atrás de tudo que já existe na página.
+ *
+ * Muitos PDFs não desenham fundo nenhum: contam com o leitor mostrando papel
+ * branco por baixo. Quando a página tem grupo de transparência, esse "papel"
+ * some ao juntar, e o resultado aparece cinza, quadriculado ou preto, dependendo
+ * do leitor e da impressora.
+ *
+ * A pintura entra por `wrapContentStreams`, que coloca o retângulo ANTES do
+ * conteúdo original em vez de por cima. Isso importa: `drawRectangle` desenharia
+ * em cima e apagaria a página. E, diferente de reembrulhar a página num
+ * XObject, este caminho preserva links, anotações e campos de formulário.
+ */
+function pintarFundoBranco(destino: PdfDoc, pagina: ReturnType<PdfDoc['addPage']>): void {
+  // A caixa nem sempre começa em zero: há PDFs com MediaBox deslocado.
+  const caixa = pagina.getMediaBox();
+  const fundo = destino.context.register(
+    destino.context.flateStream(`q 1 1 1 rg ${caixa.x} ${caixa.y} ${caixa.width} ${caixa.height} re f Q\n`),
+  );
+  const vazio = destino.context.register(destino.context.flateStream(''));
+  pagina.node.wrapContentStreams(fundo, vazio);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Imagem virando página                                                       */
 /* -------------------------------------------------------------------------- */
@@ -565,6 +588,7 @@ async function merge(ctx: RunContext): Promise<RunResult> {
 
   const canvas = document.createElement('canvas');
   const formatoImagem = String(ctx.options.formatoImagem ?? 'a4');
+  const fundoBranco = ctx.options.fundoBranco !== false && ctx.options.fundoBranco !== 'false';
   let imagens = 0;
 
   for (let i = 0; i < ctx.files.length; i += 1) {
@@ -585,7 +609,10 @@ async function merge(ctx: RunContext): Promise<RunResult> {
     } else {
       const doc = await openWithPdfLib(source.bytes, source.senha);
       const pages = await out.copyPages(doc, doc.getPageIndices());
-      pages.forEach((page) => out.addPage(page));
+      pages.forEach((page) => {
+        out.addPage(page);
+        if (fundoBranco) pintarFundoBranco(out, page);
+      });
     }
 
     await respirar(ctx);

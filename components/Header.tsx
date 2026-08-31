@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Leaf, Menu, Moon, Sun, X } from 'lucide-react';
+import { LayoutGrid, Leaf, Menu, Moon, Sun, X } from 'lucide-react';
 import { CATEGORIES, TOOLS } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { cx } from '@/lib/utils';
 
 export function Header() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -49,8 +49,12 @@ export function Header() {
           >
             <Leaf className="h-5 w-5" strokeWidth={2} />
           </span>
-          <span className="text-[17px] font-semibold tracking-tight">
-            PDF <span className="text-brand">GreenCodes</span>
+          {/* A marca é o próprio endereço: quem chega aqui já sabe onde voltar. */}
+          <span className="text-[17px] font-semibold leading-none tracking-tight">
+            <span className="text-brand">PDF</span>
+            <span className="text-muted">.</span>
+            GreenCodes
+            <span className="hidden text-sm font-normal text-muted sm:inline">.com.br</span>
           </span>
         </Link>
 
@@ -76,11 +80,11 @@ export function Header() {
             {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           <Link
-            href="/comprimir-pdf"
+            href="/#ferramentas"
             onPointerEnter={() => void warmEngine()}
             className="btn-primary hidden sm:inline-flex"
           >
-            Comprimir PDF
+            <LayoutGrid className="h-4 w-4" /> Ver ferramentas
           </Link>
           <button
             type="button"
