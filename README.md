@@ -1,242 +1,256 @@
-# PDF GreenCodes
+# PDF.GreenCodes
 
-Suíte de ferramentas de PDF em Next.js, no estilo iLovePDF, com uma diferença de arquitetura:
-**o arquivo nunca é enviado para lugar nenhum.** Todo o processamento roda no navegador do usuário,
-e o resultado é apagado da memória depois do download.
+Ferramentas de PDF que rodam inteiras no seu navegador. Sem upload, sem servidor, sem conta.
+Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
+desktop no Windows.
 
 ```bash
 npm install
-npm run dev
+npm run dev          # site em http://localhost:3000
+npm run app:dev      # aplicativo de desktop
 ```
 
-Abra <http://localhost:3000>. Em produção o destino é `pdf.greencodes.com.br`.
+---
 
-## Sem servidor, de propósito
+## Por que não tem upload
 
-O build gera HTML, CSS e JS em `out/` e acabou. Não existe processo de aplicação, rota de API, banco
-de dados nem sessão. Isso não é só simplicidade: **não há servidor para invadir, atualizar ou manter
-no ar**. A promessa de privacidade deixa de depender de confiança e vira consequência da arquitetura,
-o que dá para conferir na aba Rede do navegador.
+Quase todo site de PDF recebe o seu arquivo, processa num servidor e promete apagar depois. Aqui a
+promessa é outra, e ela não depende de confiança: **o servidor nunca recebe o documento.**
 
-Depois que a página carrega, a única requisição que o site faz é buscar o worker do pdf.js, que é um
-arquivo do próprio site. Nenhum byte do seu documento entra na rede.
+O arquivo é lido pela File API e processado na memória da aba, com `pdf-lib` e `pdf.js`. O build
+gera HTML, CSS e JS estáticos em `out/` — não existe rota de API, banco de dados nem processo de
+aplicação. Dá para conferir: abra a aba **Rede** do navegador e rode qualquer ferramenta. A única
+requisição é o worker do pdf.js, que é arquivo do próprio site.
 
-O ciclo de vida do resultado está em [`lib/ephemeral.ts`](lib/ephemeral.ts):
+O resultado vive num cofre em memória com prazo de 10 minutos e contador na tela. O primeiro
+download preserva a cópia, porque é comum o navegador perguntar onde salvar. O botão então vira
+**Baixar de novo**: essa segunda cópia apaga a da memória na hora.
 
-- o arquivo gerado vive como `Blob` num cofre em memória, com prazo de 10 minutos e contador na tela;
-- o **primeiro** download preserva a cópia, porque é comum o navegador perguntar onde salvar ou a
-  pessoa precisar do arquivo de novo;
-- o botão então vira **Baixar de novo**: esse segundo download entrega outra cópia e apaga a da
-  memória na hora;
-- o descarte também acontece no botão "Apagar agora", ao trocar de ferramenta, ao expirar o prazo ou
-  ao fechar a aba.
+---
 
-## Pré-carregamento
+## As 20 ferramentas
 
-O peso real dessas ferramentas são as bibliotecas (`@cantoo/pdf-lib` + `pdf.js`, cerca de 1,3 MB
-somados). Elas ficam fora do bundle inicial, que é de 115 kB, e são buscadas em três momentos, o que
-vier primeiro:
+| Organizar | Editar | Converter | Otimizar e privacidade |
+|---|---|---|---|
+| **Juntar PDF** | Assinar PDF | PDF para imagem | Comprimir PDF |
+| Organizar páginas | Editar PDF | Imagem para PDF | Proteger PDF |
+| Remover páginas | Girar PDF | PDF para texto | Desbloquear PDF |
+| Extrair páginas | Cortar PDF | Extrair imagens | Limpar metadados |
+| Dividir PDF | Redimensionar PDF | | |
+| Várias por folha | Marca d'água | | |
 
-1. quando a thread principal fica ociosa, via `requestIdleCallback`
-   ([`components/Warmup.tsx`](components/Warmup.tsx));
-2. no `pointerenter` de um card de ferramenta, porque hover é intenção: a rota é prefetchada e o
-   motor aquecido;
-3. ao abrir a página da ferramenta.
+Quatro delas trabalham com uma **grade de miniaturas** em vez de formulário: organizar, remover,
+extrair e girar. Você vê o documento e clica nele. Outras duas abrem um **editor sobre a página**:
+assinar e editar.
 
-Ao soltar o arquivo, ele já é lido, paginado e miniaturizado **enquanto** o usuário mexe nas opções.
+### Juntar PDF, o carro-chefe
 
-## Ferramentas
+Aceita PDFs e imagens misturados, na ordem que você definir arrastando os cards ou ordenando pelo
+nome (a comparação é numérica, então `arquivo 2` vem antes de `arquivo 10`).
 
-20 ferramentas, em 5 categorias. Quatro trabalham com uma grade de miniaturas e duas abrem um editor
-sobre a própria página: você vê o documento e mexe nele.
+Arquivo protegido por senha entra também: o campo de senha aparece no próprio card, o botão fica
+travado até você informá-la, e **o resultado sai sem senha**.
 
-| Ferramenta | Rota | Observação |
-|---|---|---|
-| Comprimir PDF | `/comprimir-pdf` | 3 níveis; compara com a reescrita sem perda e nunca devolve arquivo maior |
-| Juntar PDF | `/juntar-pdf` | ordem por arrastar, ou automática de A a Z e de Z a A |
-| **Organizar páginas** | `/organizar-paginas` | grade visual: arrastar para reordenar, girar e excluir |
-| **Remover páginas** | `/remover-paginas` | grade visual: clique nas páginas que devem sair |
-| **Extrair páginas** | `/extrair-paginas` | grade visual: clique nas páginas que ficam |
-| Dividir PDF | `/dividir-pdf` | a cada N páginas ou por intervalos; saída em `.zip` |
-| Várias por folha | `/varias-por-folha` | 2 ou 4 páginas por folha A4, com moldura opcional |
-| **Girar PDF** | `/girar-pdf` | grade visual: cada clique gira 90°, ou gire todas de uma vez |
-| **Assinar PDF** | `/assinar-pdf` | desenhe com o mouse ou o dedo (ou envie uma foto) e arraste até o lugar |
-| **Editar PDF** | `/editar-pdf` | caixas de texto, tapar trechos, marca-texto e imagens, em qualquer página |
-| Cortar PDF | `/cortar-pdf` | margens por porcentagem em cada lado (CropBox) |
-| Redimensionar PDF | `/redimensionar-pdf` | A4, Carta, A3 ou escala livre, preservando a orientação |
-| Marca d'água | `/marca-dagua` | texto diagonal, opcional em mosaico |
-| PDF para imagem | `/pdf-para-jpg` | JPG/PNG, 72 a 300 DPI, `.zip` com múltiplas páginas |
-| Imagem para PDF | `/jpg-para-pdf` | JPG/PNG/WebP, página ajustada ou A4 |
-| PDF para texto | `/pdf-para-texto` | extrai o texto embutido; não faz OCR e avisa quando não há texto |
-| Extrair imagens | `/extrair-imagens` | imagens embutidas, sem repetir a mesma em páginas diferentes |
-| Proteger PDF | `/proteger-pdf` | criptografia AES com senha de abertura e permissões |
-| Desbloquear PDF | `/desbloquear-pdf` | remove a senha de um arquivo que você já sabe abrir |
-| Limpar metadados | `/limpar-metadados` | zera autor, título, produtor e datas |
+### Assinar e editar
 
-Adicionar uma ferramenta é uma entrada em [`lib/tools.ts`](lib/tools.ts), que gera card, rota,
-metadados de SEO e o formulário, mais uma função em [`lib/pdf/engine.ts`](lib/pdf/engine.ts).
+Desenhe a assinatura com o mouse ou o dedo, ou envie uma foto dela. O traço é recortado no contorno,
+então entra no documento sem moldura branca em volta. Depois é só arrastar até o lugar e ajustar o
+tamanho pelo canto.
 
-As quatro ferramentas de grade compartilham o mesmo componente
-([`components/PageBoard.tsx`](components/PageBoard.tsx)) e a mesma operação no motor: a grade publica
-um plano com as páginas que ficam, em que ordem e com qual rotação, e o motor só remonta o documento.
-
-## O editor e o que ele não é
-
-`Assinar PDF` e `Editar PDF` são o mesmo componente
-([`components/PdfEditor.tsx`](components/PdfEditor.tsx)), mudando só por onde começam. Você adiciona
-texto, assinatura, imagem, retângulo branco para tapar e marca-texto, arrasta sobre a página e ajusta
-o tamanho pelo canto. Nada toca o arquivo enquanto você edita: as alterações viram uma lista e só são
-aplicadas ao salvar.
+O editor completo acrescenta caixa de texto, retângulo branco para cobrir um trecho e escrever por
+cima, e marca-texto.
 
 **Ele não edita o texto que já existe no PDF**, e nenhuma ferramenta honesta promete isso sem
-ressalvas. O texto num PDF é glifo posicionado com fonte quase sempre embutida em subconjunto: as
-letras que você quer digitar podem simplesmente não existir no arquivo, e não há refluxo de linha
-nem noção de parágrafo. O caminho que funciona, e é o que as ferramentas de mercado fazem por baixo,
-é **tapar o trecho antigo e escrever por cima** — que é exatamente o par "Tapar" + "Texto".
+ressalvas: o texto num PDF é glifo posicionado com fonte quase sempre embutida em subconjunto, então
+as letras que você quer digitar podem simplesmente não existir no arquivo. O caminho que funciona,
+e é o que as ferramentas de mercado fazem por baixo, é **tapar e escrever por cima**.
 
-Cuidado com uma consequência: tapar é visual. O texto original continua dentro do arquivo e pode ser
-recuperado por quem souber procurar. Para esconder dado sensível de verdade, converta a página em
-imagem antes (`PDF para imagem` e depois `Imagem para PDF`).
+> Cuidado: tapar é visual. O texto original continua dentro do arquivo. Para esconder dado sensível
+> de verdade, converta a página em imagem antes (`PDF para imagem` e depois `Imagem para PDF`).
 
-### Coordenadas, que é onde isso costuma quebrar
+### Comprimir
 
-A tela mede de cima para baixo e ancora o elemento pelo canto superior esquerdo; o PDF mede de baixo
-para cima e ancora pelo inferior esquerdo. O editor guarda tudo como fração da página (0 a 1), e a
-conversão vive isolada em [`lib/pdf/layout.ts`](lib/pdf/layout.ts) para poder ser testada sem
-navegador.
+| Nível | O que faz |
+|---|---|
+| **Sem perda** (padrão) | Reescreve a estrutura interna. Não altera nem um pixel. |
+| Equilibrada | 150 DPI. As páginas viram imagem. |
+| Máxima | 110 DPI. Menor arquivo. |
 
-O preview é renderizado com `rotation: 0` de propósito: assim o que aparece na tela é exatamente o
-espaço em que o pdf-lib vai desenhar, e a conversão é uma regra de três. Com a rotação embutida, cada
-orientação exigiria uma matriz diferente, e um erro ali colocaria a assinatura no lugar errado sem
-ninguém perceber. Páginas com rotação gravada aparecem deitadas no editor, com um aviso sugerindo
-endireitar antes com `Girar PDF`.
+O padrão é sem perda de propósito. Rasterizar reduz muito mais, mas converte tudo para sRGB e o
+JPEG ainda faz subamostragem de croma: um PDF em CMYK ou com perfil ICC sai com a cor visivelmente
+diferente. Quem pede "só comprimir" não espera isso, então virou escolha explícita.
 
-## Como a compressão funciona
+Nos dois modos com perda, o resultado é comparado com a reescrita sem perda e com o arquivo
+original, e entregamos o menor dos três. Se nada ajudar, você recebe o original intacto.
 
-São 3 níveis, e mesmo o mais agressivo precisa render um documento que dá para ler e imprimir. Por
-isso o piso é 110 DPI:
+---
 
-| Nível | Resolução | Qualidade JPEG |
-|---|---|---|
-| Baixa compressão, alta qualidade | 200 DPI | 0.85 |
-| Média compressão, média qualidade | 150 DPI | 0.72 |
-| Alta compressão, qualidade menor | 110 DPI | 0.55 |
+## Aplicativo de desktop
 
-Rasterizar destrói o texto vetorial, então num PDF que já é só texto o arquivo cresceria. O app
-sempre compara o resultado com uma reescrita sem perda e fica com o menor dos dois, avisando na
-interface qual caminho usou. Se nenhum dos dois ajudar, devolve o original intacto.
+O app não é o site numa janela. Ele faz o que só um programa instalado consegue:
 
-## Barreiras contra arquivo hostil
-
-Em [`lib/pdf/guards.ts`](lib/pdf/guards.ts):
-
-- validação por **conteúdo**, não por extensão: um `.pdf` que não traz a assinatura `%PDF-` no
-  primeiro kilobyte é recusado antes de chegar ao pdf.js (mesma coisa para JPG, PNG e WebP);
-- teto de 150 MB por arquivo, 300 MB por fila e 30 arquivos;
-- teto de 5 minutos por operação e botão de cancelar sempre disponível, com o cancelamento
-  acontecendo nos pontos onde o laço devolve a thread;
-- teto de 300 miniaturas na grade: acima disso as páginas continuam lá, identificadas pelo número;
-- pdf.js roda com `isEvalSupported: false`;
-- error boundary em [`app/error.tsx`](app/error.tsx) e [`app/global-error.tsx`](app/global-error.tsx),
-  para um erro de tela não virar página em branco.
-
-**Isso não torna a leitura de PDF hostil segura.** O pdf.js é código complexo lendo um formato
-projetado para ser complexo, e uma falha de memória nele continua possível. As camadas acima reduzem
-a superfície e limitam o estrago. Desconfie de qualquer site que prometa proteção total nessa área,
-inclusive deste.
-
-O passo seguinte, se o risco justificar, é isolar o interpretador num iframe `sandbox` sem
-`allow-same-origin`. É um retrabalho grande e ainda não está feito.
-
-## Testes
+- **Menu do botão direito no Explorador.** Clique em um PDF e escolha *Abrir no PDF.GreenCodes*.
+  Selecione vários e escolha *Juntar com o PDF.GreenCodes* — todos chegam de uma vez, porque a
+  chave usa `MultiSelectModel=Player` em vez de abrir uma janela por arquivo.
+- **Diálogo nativo de salvar.** Você escolhe a pasta, o arquivo vai direto para o disco e aparece um
+  atalho *Mostrar na pasta*. Nada de pasta de downloads.
+- **Sem prazo de expiração.** O contador de 10 minutos some: o disco é seu.
+- **Abertura por clique duplo e "Abrir com".** O arquivo cai direto na ferramenta que estiver aberta.
+- **Vive na bandeja** e inicia com o Windows em modo oculto, sem pular na cara ao ligar o computador.
 
 ```bash
-npm test
+npm run app:build    # gera o instalador em dist-app/
 ```
 
-65 testes. A maioria cobre lógica pura, que é onde um erro passa despercebido: o interpretador de
-intervalos de página, as barreiras de arquivo, a geometria do editor e a consistência do registro de
-ferramentas (slug duplicado, `showIf` apontando para campo inexistente, valor inicial fora da faixa,
-grade misturada com editor).
+As duas integrações (menu do botão direito e início automático) são opcionais e ficam no menu da
+bandeja. As chaves de registro vão em `HKCU`, e não em `HKLM`: não pedem elevação, não sequestram o
+programa padrão do `.pdf` e somem junto com o perfil do usuário.
 
-Quatro deles são de integração e valem por muitos: geram um PDF com o pdf-lib usando a mesma fórmula
-de coordenadas do editor e leem o resultado de volta com o pdf.js, conferindo onde o texto realmente
-caiu. Se alguém um dia "consertar" a inversão do eixo vertical, o teste cai. É a diferença entre a
-matemática estar certa e a assinatura ficar no lugar certo.
+### Como o app é montado por dentro
 
-O que depende de canvas e de interação continua sendo verificado no navegador.
+A interface é servida por um **servidor HTTP local**, e não por `file://`, porque o pdf.js carrega o
+worker com `new URL(...)` e o protocolo de arquivo bloqueia isso. O servidor só entrega o que está
+dentro de `out/`, com trava de diretório testada contra travessia codificada em percentual.
+
+A janela roda com `contextIsolation` e `sandbox` ligados: a página não tem Node nem acesso ao disco.
+Tudo que ela consegue fazer passa por uma lista fechada de canais em `electron/preload.js`, cada um
+validado do outro lado. Não existe `invoke` genérico de propósito — assim uma falha na interface não
+vira acesso ao sistema de arquivos.
+
+---
+
+## Rodando e testando
+
+```bash
+npm run dev          # desenvolvimento
+npm run build        # gera out/
+npm run preview      # serve out/ para conferir o build
+npm test             # 75 testes
+npm run typecheck
+```
+
+Os testes cobrem a lógica pura, que é onde erro passa despercebido: interpretador de intervalos de
+página, barreiras de arquivo, geometria do editor e consistência do registro de ferramentas.
+
+Alguns são de integração e valem por muitos: geram PDFs de verdade com o pdf-lib e leem o resultado
+de volta com o pdf.js. É o que garante que a assinatura cai no lugar certo e que o merge não volta a
+sair em branco.
+
+---
+
+## Bugs que custaram caro
+
+Estão documentados no código, porque cada um levou tempo para achar.
+
+**Juntar gerava arquivo em branco.** O documento era aberto com `ignoreEncryption: true`, que abre o
+PDF sem descriptografar. As páginas existem, a contagem bate, a miniatura até aparece, e o conteúdo
+copiado continua cifrado. O caso que pega na prática é o PDF protegido só com senha de dono — prova,
+boleto, extrato: abre normalmente em qualquer leitor e nunca pede senha, então ninguém desconfia.
+Agora abrimos sempre com senha (vazia por padrão) e há 7 testes de regressão.
+
+**Páginas saíam cinza ou pretas ao juntar.** Muitos PDFs não desenham fundo e contam com o papel
+branco do leitor. Quando a página tem grupo de transparência, esse fundo some. A correção pinta um
+retângulo branco **antes** do conteúdo via `wrapContentStreams`, o que preserva links, anotações e
+campos de formulário — reembrulhar a página num XObject perderia tudo isso.
+
+**"Várias por folha" comia meio centímetro de cada lado.** O espaçamento era aplicado também nas
+bordas externas (`gap * (colunas + 1)`). Agora espaçamento interno e margem externa são
+independentes e ambos começam em zero: o PDF não precisa de margem de segurança, quem cuida disso é
+a impressora.
+
+**`requestAnimationFrame` não dispara em aba oculta.** Ceder a thread com ele congelava o
+processamento se a pessoa trocasse de aba. Trocado por `MessageChannel`, que não sofre throttling.
+Pelo mesmo motivo, a bolinha dos toggles parava no meio do caminho e mostrava um estado que não era
+o real — a posição agora muda sem animação.
+
+**O pdf.js só materializa imagens quando a página é rasterizada**, e imagens repetidas em várias
+páginas vão para `commonObjs`, não para `objs`. Sem tratar os dois casos, `Extrair imagens` esperava
+para sempre por objetos que nunca chegavam.
+
+**`backdrop-filter` empilhado em dezenas de cards** rende caixas em branco em rasterização por
+software e GPUs antigas. Os cards usam fundo opaco.
+
+**Item de grid tem `min-width: auto`.** Sem `min-w-0` nas colunas, conteúdo largo esticava a coluna
+e criava rolagem horizontal no celular.
+
+---
+
+## Segurança
+
+O arquivo que entra é de origem desconhecida, então:
+
+- validação por **conteúdo**, não por extensão: um `.pdf` que não traz a assinatura `%PDF-` no
+  primeiro kilobyte é recusado antes de chegar ao pdf.js;
+- teto de 150 MB por arquivo, 300 MB por fila e 30 arquivos;
+- teto de 5 minutos por operação, com botão de cancelar sempre disponível;
+- teto de 300 miniaturas na grade;
+- pdf.js roda com `isEvalSupported: false`;
+- error boundary para um erro de tela não virar página em branco.
+
+**Isso não torna a leitura de PDF hostil segura.** O pdf.js é código complexo lendo um formato
+projetado para ser complexo. As camadas acima reduzem a superfície e limitam o estrago. Desconfie de
+qualquer site que prometa proteção total nessa área, inclusive deste.
+
+### Cabeçalhos
+
+Em saída estática o `next.config.mjs` não emite cabeçalhos HTTP, então eles vêm de dois lugares: um
+`<meta http-equiv="Content-Security-Policy">` no layout, que viaja junto com o HTML, e os cabeçalhos
+completos em [`public/_headers`](public/_headers) e [`vercel.json`](vercel.json).
+
+`frame-ancestors` e `X-Frame-Options` **só funcionam como cabeçalho HTTP**, nunca em meta. Se
+hospedar em outro lugar, replique o conteúdo de `public/_headers`.
+
+Sobre o `'unsafe-inline'` em `script-src`: o App Router injeta scripts inline com o payload de
+renderização, e o conteúdo muda a cada página, então hash fixo não cobre. A alternativa seria nonce,
+que exige renderização dinâmica e mataria a saída estática. Como não existe backend, nem entrada de
+usuário renderizada como HTML, nem conteúdo de terceiros, o vetor de XSS é mínimo — e o
+`connect-src 'self'` garante que nem um script hostil teria para onde enviar um documento.
+
+---
 
 ## Privacidade
 
-- Nenhuma requisição de rede carrega o conteúdo do arquivo. Não existe endpoint de upload.
-- Sem analytics, sem pixels, sem contadores de uso, sem cookies, sem fontes externas e sem CDN.
-  A telemetria do Next está desligada em [`.env`](.env).
+- Nenhuma requisição carrega o conteúdo do arquivo. Não existe endpoint de upload.
+- Sem analytics, sem pixels, sem contadores de uso, sem cookies, sem fontes externas, sem CDN.
+  A telemetria do Next está desligada.
 - No `localStorage` fica apenas a preferência de tema.
-- A senha de Proteger e Desbloquear existe só em memória durante a operação. Não vai para o
-  `localStorage`, não entra em URL e não é preenchida automaticamente.
+- A senha de Proteger e Desbloquear existe só em memória durante a operação.
 
-### Cabeçalhos de segurança
+---
 
-Em saída estática o `next.config.mjs` não emite cabeçalhos HTTP, então eles vêm de dois lugares:
+## Adicionando uma ferramenta
 
-- um `<meta http-equiv="Content-Security-Policy">` no [`app/layout.tsx`](app/layout.tsx), que viaja
-  junto com o HTML e vale mesmo se o host não for configurado;
-- os cabeçalhos completos em [`public/_headers`](public/_headers) (Netlify e Cloudflare Pages) e
-  [`vercel.json`](vercel.json).
+Uma entrada em [`lib/tools.ts`](lib/tools.ts) gera o card, a rota, os metadados de SEO e o
+formulário. A lógica vai em [`lib/pdf/engine.ts`](lib/pdf/engine.ts) e entra no mapa `OPERATIONS`.
 
-`frame-ancestors` e `X-Frame-Options` **só funcionam como cabeçalho HTTP**, nunca em meta. Se você
-hospedar em outro lugar, replique o conteúdo de `public/_headers` na configuração do servidor. Em
-nginx:
+As quatro ferramentas de grade compartilham [`components/PageBoard.tsx`](components/PageBoard.tsx) e
+uma operação só no motor: a grade publica um plano com as páginas que ficam, em que ordem e com qual
+rotação, e o motor apenas remonta o documento.
 
-```nginx
-add_header X-Frame-Options DENY always;
-add_header X-Content-Type-Options nosniff always;
-add_header Referrer-Policy no-referrer always;
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
-```
-
-Sobre o `'unsafe-inline'` em `script-src`: o App Router do Next injeta scripts inline com o payload
-de renderização, e o conteúdo deles muda a cada página, então hash fixo não cobre. A alternativa
-seria nonce, que exige renderização dinâmica e mataria a saída estática. Como aqui não existe
-backend, nem entrada de usuário renderizada como HTML, nem conteúdo de terceiros, o vetor de XSS é
-mínimo, e o `connect-src 'self'` garante que mesmo um script hostil não teria para onde enviar um
-documento.
+---
 
 ## O que ele não faz
 
-- **OCR e PDF para Word.** Precisam de modelos pesados; caberiam via WASM, mas mudariam a categoria
-  do projeto. `PDF para texto` avisa quando o documento é digitalizado e não tem texto a extrair.
+- **OCR e PDF para Word.** Precisam de modelos pesados. `PDF para texto` avisa quando o documento é
+  digitalizado e não tem texto a extrair.
 - **Quebrar senha.** `Desbloquear PDF` só funciona com a senha correta em mãos.
-- **Arquivos gigantes em aparelhos fracos.** O limite é a RAM da aba. É o preço de não ter servidor.
+- **Arquivos gigantes em aparelhos fracos.** No navegador o limite é a RAM da aba. É o preço de não
+  ter servidor — e é justamente onde o aplicativo de desktop se sai melhor.
 
-## Detalhes que custaram caro
-
-Armadilhas encontradas durante os testes, todas documentadas no código:
-
-- **`requestAnimationFrame` não dispara em aba oculta.** Ceder a thread com ele congelava o
-  processamento se o usuário trocasse de aba. Trocado por `MessageChannel`, que não sofre throttling.
-- **Transição de CSS presa no meio.** Pelo mesmo motivo, a bolinha dos toggles parava no meio do
-  caminho e mostrava um estado que não era o real. A posição agora muda sem animação.
-- **O pdf.js só materializa imagens quando a página é rasterizada**, e imagens repetidas em várias
-  páginas vão para `commonObjs`, não para `objs`. Sem tratar os dois casos, `Extrair imagens`
-  esperava para sempre por objetos que nunca chegavam.
-- **`backdrop-filter` empilhado em dezenas de cards** rende caixas em branco em rasterização por
-  software e GPUs antigas. Os cards usam fundo opaco.
-- **Comparar bytes de formatos diferentes engana.** Um PDF virando TXT mostrava "economia de 100%".
-  A faixa de comparação agora só aparece nas ferramentas em que encolher é o objetivo.
+---
 
 ## Stack
 
-Next.js 15 (App Router, saída estática) · React 19 · TypeScript · Tailwind CSS ·
-[@cantoo/pdf-lib](https://www.npmjs.com/package/@cantoo/pdf-lib) (fork do pdf-lib com criptografia) ·
-pdf.js · JSZip · Vitest.
+Next.js 16 (App Router, Turbopack, saída estática) · React 19 · TypeScript · Tailwind CSS 4 ·
+[@cantoo/pdf-lib](https://www.npmjs.com/package/@cantoo/pdf-lib) · pdf.js · JSZip · Vitest ·
+Electron.
 
 ## Deploy
 
 ```bash
-npm run build     # gera out/
-npm run preview   # serve out/ localmente para conferir
+npm run build
 ```
 
-O conteúdo de `out/` são arquivos estáticos: sobe em Vercel, Netlify, Cloudflare Pages, GitHub Pages,
-S3 ou qualquer servidor de arquivos. Não há variável de ambiente, banco nem storage para configurar.
+O conteúdo de `out/` são arquivos estáticos: sobe em Vercel, Netlify, Cloudflare Pages, GitHub
+Pages, S3 ou qualquer servidor de arquivos. Não há variável de ambiente, banco nem storage para
+configurar.

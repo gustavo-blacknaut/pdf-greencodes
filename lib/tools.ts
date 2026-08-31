@@ -112,6 +112,13 @@ export const TOOLS: Tool[] = [
         ],
         help: 'Só afeta as fotos. Os PDFs entram com o tamanho de página original.',
       },
+      {
+        key: 'fundoBranco',
+        type: 'toggle',
+        label: 'Forçar fundo branco',
+        default: true,
+        help: 'Alguns PDFs não desenham fundo e contam com o papel branco do leitor. Ao juntar, esse fundo some e a página sai cinza ou preta. Isto pinta branco por baixo, sem mexer no conteúdo.',
+      },
     ],
   },
   {

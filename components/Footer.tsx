@@ -7,7 +7,7 @@ export function Footer() {
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_2fr]">
         <div>
           <p className="text-lg font-semibold tracking-tight">
-            PDF <span className="text-brand">GreenCodes</span>
+            <span className="text-brand">PDF</span>.GreenCodes<span className="text-muted">.com.br</span>
           </p>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted">
             Ferramentas de PDF que rodam inteiras dentro do seu navegador. Sem upload, sem fila, sem conta. E o

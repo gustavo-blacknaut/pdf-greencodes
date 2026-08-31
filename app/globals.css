@@ -1,9 +1,49 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+/*
+ * Tailwind v4 é configurado no próprio CSS: não existe mais tailwind.config.
+ *
+ * O tema é trocado por classe, e não pela preferência do sistema, então a
+ * variante "dark" é declarada aqui à mão.
+ *
+ * As cores entram em "@theme inline" de propósito. Sem o inline, o Tailwind
+ * copiaria o valor do tema claro para dentro de cada utilidade no momento do
+ * build, e trocar de tema não mudaria nada. Com ele, "bg-surface" vira uma
+ * referência à variável, que o .dark no html redefine em tempo de execução.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: rgb(var(--bg));
+  --color-surface: rgb(var(--surface));
+  --color-elevated: rgb(var(--elevated));
+  --color-line: rgb(var(--line));
+  --color-ink: rgb(var(--ink));
+  --color-muted: rgb(var(--muted));
+  --color-brand: rgb(var(--brand));
+  --color-brand2: rgb(var(--brand2));
+
+  --font-sans: var(--font-sans-stack);
+
+  --radius-xl: 0.9rem;
+  --radius-2xl: 1.25rem;
+
+  --animate-fade-up: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 :root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-sans-stack: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --bg: 246 250 247;
   --surface: 255 255 255;
   --elevated: 241 247 243;
@@ -83,16 +123,37 @@ body {
   /* Fundo opaco de propósito: backdrop-filter em dezenas de cards empilhados
      rende caixas em branco em rasterização por software e em GPUs antigas. */
   .card {
-    @apply rounded-2xl border bg-surface shadow-sm;
+    @apply relative rounded-2xl border bg-surface;
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 8px 24px -16px rgb(0 0 0 / 0.25);
   }
 
-  .btn {
+  /* Fio de luz na borda de cima. É o que dá relevo no escuro sem usar sombra
+     pesada, que no fundo quase preto vira só um borrão. */
+  .dark .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding-top: 1px;
+    background: linear-gradient(to bottom, rgb(255 255 255 / 0.07), transparent 40%);
+    pointer-events: none;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+
+  /* Os três variantes compartilham a base pelo seletor, e não por `@apply btn`:
+     no v4 o `@apply` de classe própria é frágil. */
+  .btn,
+  .btn-primary,
+  .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium
            transition-all duration-200 disabled:pointer-events-none disabled:opacity-45;
   }
 
   .btn-primary {
-    @apply btn text-white shadow-lg;
+    @apply text-white shadow-lg;
     background-image: linear-gradient(120deg, rgb(var(--brand)), rgb(var(--brand2)));
     box-shadow: 0 10px 30px -12px rgb(var(--glow) / 0.85);
   }
@@ -103,7 +164,7 @@ body {
   }
 
   .btn-ghost {
-    @apply btn border bg-surface text-ink hover:bg-elevated;
+    @apply border bg-surface text-ink hover:bg-elevated;
   }
 
   .field-label {
@@ -163,6 +224,34 @@ input[type='range']::-moz-range-thumb {
 
 ::selection {
   background: rgb(var(--brand) / 0.28);
+}
+
+/* Foco visível e consistente para quem navega pelo teclado. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--brand));
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+/* Barra de rolagem no tom do tema, em vez do cinza padrão do sistema. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--line));
+  border-radius: 9999px;
+  border: 2px solid rgb(var(--bg));
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--muted) / 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {
