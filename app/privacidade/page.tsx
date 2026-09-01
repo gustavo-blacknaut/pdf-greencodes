@@ -27,7 +27,7 @@ const SECTIONS = [
   {
     title: 'O que fica salvo no seu navegador',
     body: [
-      'Apenas a sua preferência de tema (claro ou escuro), em localStorage. Nada de arquivos, nomes de arquivo ou histórico de uso.',
+      'Nada de arquivos, nomes de arquivo ou histórico de uso. A única exceção é a ferramenta de OCR: na primeira vez que ela roda, o motor de reconhecimento e os dados do idioma (alguns megabytes) ficam guardados em IndexedDB para não baixar de novo a cada uso. Esses arquivos são só o programa em si, nunca o conteúdo do seu documento, e continuam vindo deste mesmo site, sem CDN.',
     ],
   },
   {

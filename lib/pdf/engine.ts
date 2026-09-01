@@ -3,6 +3,7 @@
 import { loadPdfJs, loadPdfLib } from './lazy';
 import { abortarSePreciso, LIMITES, pareceMesmoImagem, pareceMesmoPdf } from './guards';
 import { hexParaRgb, paraCoordenadasPdf } from './layout';
+import { createOcrWorker, type OcrLanguage } from './ocr';
 import { parsePageRange, replaceExtension, suffixName, yieldToBrowser } from '../utils';
 
 export type LoadedFile = {
@@ -1232,7 +1233,241 @@ async function pdfToText(ctx: RunContext): Promise<RunResult> {
     outputBytes: blob.size,
     notes: foundText
       ? []
-      : ['Nenhum texto encontrado. Este PDF provavelmente é digitalizado e precisaria de OCR, que não fazemos.'],
+      : ['Nenhum texto encontrado. Este PDF provavelmente é digitalizado: rode a ferramenta de OCR antes.'],
+  };
+}
+
+/**
+ * OCR: reconhece o texto de um PDF digitalizado e devolve um PDF pesquisável.
+ *
+ * Cada página vira imagem (o visual não muda) e o texto reconhecido é
+ * desenhado por cima na mesma posição, com renderMode invisível. O resultado
+ * parece igual ao original, mas dá para selecionar, copiar e pesquisar.
+ */
+async function ocr(ctx: RunContext): Promise<RunResult> {
+  const source = ctx.files[0];
+  const lang = String(ctx.options.language ?? 'por+eng') as OcrLanguage;
+  const { PDFDocument, StandardFonts, TextRenderingMode } = await loadPdfLib();
+  const doc = await openWithPdfJs(source.bytes, source.senha);
+  const totalPaginas = doc.numPages;
+  const out = await PDFDocument.create();
+  const fonte = await out.embedFont(StandardFonts.Helvetica);
+  const canvas = document.createElement('canvas');
+  const dpi = 200;
+
+  ctx.onProgress(0, 'Preparando o motor de OCR (a primeira vez baixa alguns megabytes)...');
+  const worker = await createOcrWorker(lang);
+
+  let somaConfianca = 0;
+  let paginasComBaixaConfianca = 0;
+
+  try {
+    for (let i = 1; i <= totalPaginas; i += 1) {
+      abortarSePreciso(ctx.signal);
+      ctx.onProgress((i - 1) / totalPaginas, `Reconhecendo texto da página ${i}/${totalPaginas}`);
+
+      const page = await doc.getPage(i);
+      const { widthPt, heightPt } = await renderPageToCanvas(page, dpi, canvas);
+      page.cleanup();
+
+      const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.85);
+      const embutida = await out.embedJpg(await jpeg.arrayBuffer());
+      const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true, hocr: false, tsv: false });
+
+      const novaPagina = out.addPage([widthPt, heightPt]);
+      novaPagina.drawImage(embutida, { x: 0, y: 0, width: widthPt, height: heightPt });
+
+      const escala = 72 / dpi;
+      for (const word of data.words) {
+        const texto = sanitizeText(word.text ?? '');
+        if (!texto.trim()) continue;
+        const alturaPx = word.bbox.y1 - word.bbox.y0;
+        const tamanho = Math.max(4, alturaPx * escala);
+        novaPagina.drawText(texto, {
+          x: word.bbox.x0 * escala,
+          y: heightPt - word.bbox.y1 * escala,
+          size: tamanho,
+          font: fonte,
+          renderMode: TextRenderingMode.Invisible,
+        });
+      }
+
+      if (typeof data.confidence === 'number') {
+        somaConfianca += data.confidence;
+        if (data.confidence < 60) paginasComBaixaConfianca += 1;
+      }
+
+      await respirar(ctx);
+    }
+  } finally {
+    await worker.terminate();
+  }
+  await doc.destroy();
+
+  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  const confianca = totalPaginas ? Math.round(somaConfianca / totalPaginas) : 0;
+  return {
+    files: [{ name: suffixName(source.name, 'pesquisavel'), blob, pages: totalPaginas }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [
+      `Confiança média do reconhecimento: ${confianca}%.`,
+      ...(paginasComBaixaConfianca > 0
+        ? [`${paginasComBaixaConfianca} página(s) com baixa confiança — confira o texto selecionável.`]
+        : []),
+      'O texto reconhecido fica invisível sobre a imagem da página original: a aparência não muda, mas dá para selecionar, copiar e pesquisar.',
+    ],
+  };
+}
+
+const PAGE_NUMBER_MARGIN_PT = 24;
+
+async function pageNumbers(ctx: RunContext): Promise<RunResult> {
+  const { StandardFonts, rgb } = await loadPdfLib();
+  const source = ctx.files[0];
+  const doc = await openWithPdfLib(source.bytes, source.senha);
+  const fonte = await doc.embedFont(StandardFonts.Helvetica);
+  const paginas = doc.getPages();
+  const posicao = String(ctx.options.position ?? 'rodape-centro');
+  const formato = String(ctx.options.format ?? 'numero');
+  const inicioEm = Math.max(1, Math.round(Number(ctx.options.startAt ?? 1)));
+  const tamanho = Math.max(6, Number(ctx.options.size ?? 11));
+  const ultimoNumero = inicioEm + paginas.length - 1;
+
+  for (let i = 0; i < paginas.length; i += 1) {
+    ctx.onProgress(i / paginas.length, `Numerando página ${i + 1}/${paginas.length}`);
+    const pagina = paginas[i];
+    const { width, height } = pagina.getSize();
+    const numero = inicioEm + i;
+    const texto = formato === 'de-total' ? `Página ${numero} de ${ultimoNumero}` : String(numero);
+    const largura = fonte.widthOfTextAtSize(texto, tamanho);
+
+    const y = posicao.startsWith('rodape') ? PAGE_NUMBER_MARGIN_PT : height - PAGE_NUMBER_MARGIN_PT - tamanho;
+    const x = posicao.endsWith('esquerda')
+      ? PAGE_NUMBER_MARGIN_PT
+      : posicao.endsWith('direita')
+        ? width - PAGE_NUMBER_MARGIN_PT - largura
+        : (width - largura) / 2;
+
+    pagina.drawText(texto, { x, y, size: tamanho, font: fonte, color: rgb(0.4, 0.45, 0.42) });
+    await respirar(ctx);
+  }
+
+  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'numerado'), blob, pages: paginas.length }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [],
+  };
+}
+
+/**
+ * Não conserta um PDF corrompido de verdade: só reconstrói a estrutura
+ * interna (tabela de referências, objetos) do zero a partir do que consegue
+ * ler. É o mesmo caminho que a compressão "sem perda" usa, exposto como
+ * ferramenta própria porque resolve boa parte dos "meu PDF não abre".
+ */
+async function repair(ctx: RunContext): Promise<RunResult> {
+  const source = ctx.files[0];
+  ctx.onProgress(0.15, 'Lendo a estrutura do arquivo...');
+  const doc = await openWithPdfLib(source.bytes, source.senha);
+  ctx.onProgress(0.7, 'Reescrevendo o PDF do zero...');
+  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'reparado'), blob, pages: doc.getPageCount() }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [
+      'Reescrevemos toda a estrutura interna do arquivo. Isso resolve boa parte dos PDFs corrompidos ou gerados por programas com falhas, mas não recupera conteúdo que já estava perdido no original.',
+    ],
+  };
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Converte o texto embutido do PDF (o mesmo que "PDF para texto" extrai) num
+ * .docx mínimo, montado à mão como zip de XML porque é isso que o formato é.
+ * Só o texto atravessa: layout, colunas, imagens e tabelas do PDF original
+ * não são preservados.
+ */
+async function pdfToWord(ctx: RunContext): Promise<RunResult> {
+  const source = ctx.files[0];
+  const doc = await openWithPdfJs(source.bytes, source.senha);
+  const totalPaginas = doc.numPages;
+  const paginasXml: string[] = [];
+  let foundText = false;
+
+  for (let i = 1; i <= totalPaginas; i += 1) {
+    ctx.onProgress((i - 1) / totalPaginas, `Extraindo texto da página ${i}/${totalPaginas}`);
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    let texto = '';
+    for (const item of content.items) {
+      if (!('str' in item)) continue;
+      texto += item.str;
+      if (item.hasEOL) texto += '\n';
+      else if (!item.str.endsWith(' ')) texto += ' ';
+    }
+    const linhas = texto
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .split('\n');
+    if (linhas.some((linha) => linha.trim())) foundText = true;
+
+    const paragrafos = linhas.length
+      ? linhas.map((linha) => `<w:p><w:r><w:t xml:space="preserve">${escapeXml(linha)}</w:t></w:r></w:p>`).join('')
+      : '<w:p/>';
+    const quebraDePagina = i < totalPaginas ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : '';
+    paginasXml.push(paragrafos + quebraDePagina);
+
+    page.cleanup();
+    await yieldToBrowser();
+  }
+  await doc.destroy();
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paginasXml.join('')}<w:sectPr/></w:body></w:document>`;
+
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', contentTypesXml);
+  zip.file('_rels/.rels', rootRelsXml);
+  zip.file('word/document.xml', documentXml);
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+
+  ctx.onProgress(1);
+  return {
+    files: [{ name: replaceExtension(source.name, 'docx'), blob, pages: totalPaginas }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [
+      'Só o texto sai no .docx: layout, colunas, imagens e tabelas do PDF original não são preservados.',
+      ...(foundText
+        ? []
+        : ['Nenhum texto encontrado. Este PDF provavelmente é digitalizado: rode a ferramenta de OCR antes.']),
+    ],
   };
 }
 
@@ -1512,6 +1747,10 @@ export const OPERATIONS = {
   'pdf-to-text': pdfToText,
   'extract-images': extractImages,
   edit,
+  ocr,
+  'page-numbers': pageNumbers,
+  repair,
+  'pdf-to-word': pdfToWord,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;

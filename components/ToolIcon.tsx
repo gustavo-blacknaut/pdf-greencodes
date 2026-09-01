@@ -9,6 +9,7 @@ import {
   FilePlus,
   FileText,
   FileType,
+  FileType2,
   Grid2x2,
   Hash,
   ImageIcon,
@@ -19,10 +20,12 @@ import {
   PenLine,
   RotateCw,
   Scaling,
+  ScanText,
   Scissors,
   Shrink,
   Stamp,
   Unlock,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -34,6 +37,7 @@ const ICONS: Record<string, LucideIcon> = {
   FileMinus,
   FilePlus,
   FileType,
+  FileType2,
   Grid2x2,
   Hash,
   ImageIcon,
@@ -44,10 +48,12 @@ const ICONS: Record<string, LucideIcon> = {
   PenLine,
   RotateCw,
   Scaling,
+  ScanText,
   Scissors,
   Shrink,
   Stamp,
   Unlock,
+  Wrench,
 };
 
 export function ToolIcon({ name, className }: { name: string; className?: string }) {
