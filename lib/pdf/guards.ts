@@ -11,8 +11,8 @@ export const LIMITES = {
   /** Um arquivo sozinho. Acima disso a aba costuma morrer antes de terminar. */
   bytesPorArquivo: 150 * 1024 * 1024,
   /** Soma de todos os arquivos da fila. */
-  bytesTotais: 300 * 1024 * 1024,
-  arquivos: 30,
+  bytesTotais: 1024 * 1024 * 1024,
+  arquivos: 100,
   /** Miniaturas na grade. O resto vira placeholder numerado. */
   miniaturas: 300,
   /** Teto de tempo de uma operação inteira. */

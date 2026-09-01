@@ -25,23 +25,20 @@ export const metadata: Metadata = {
   // Sem referrer, sem descoberta automática de endereços dentro do documento.
   referrer: 'no-referrer',
   formatDetection: { telephone: false, email: false, address: false },
+  icons: {
+    icon: '/logo.ico',
+    shortcut: '/logo.ico',
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#070f0b' },
-    { media: '(prefers-color-scheme: dark)', color: '#070f0b' },
-  ],
+  themeColor: '#070f0b',
 };
-
-// Aplica o tema antes da primeira pintura para não piscar branco no modo escuro.
-// Escuro é o padrão da casa: só o modo claro precisa ser escolhido, e a escolha
-// fica salva. Sem isso a página piscaria branco antes do React montar.
-const themeScript = `(function(){try{var t=localStorage.getItem('greencodes-theme');document.documentElement.classList.toggle('dark',t!=='light');}catch(e){document.documentElement.classList.add('dark');}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" className="dark">
       <head>
         {/*
           Em saída estática o next.config não manda cabeçalhos HTTP, então a
@@ -70,7 +67,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             "form-action 'none'",
           ].join('; ')}
         />
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="font-sans antialiased">
         <div className="aurora" aria-hidden />

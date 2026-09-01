@@ -3,15 +3,9 @@
 /*
  * Tailwind v4 é configurado no próprio CSS: não existe mais tailwind.config.
  *
- * O tema é trocado por classe, e não pela preferência do sistema, então a
- * variante "dark" é declarada aqui à mão.
- *
- * As cores entram em "@theme inline" de propósito. Sem o inline, o Tailwind
- * copiaria o valor do tema claro para dentro de cada utilidade no momento do
- * build, e trocar de tema não mudaria nada. Com ele, "bg-surface" vira uma
- * referência à variável, que o .dark no html redefine em tempo de execução.
+ * A casa só tem um tema, o escuro, então as cores entram direto em "@theme
+ * inline" apontando para variáveis fixas no :root. Não existe alternância.
  */
-@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-bg: rgb(var(--bg));
@@ -44,18 +38,6 @@
 
 :root {
   --font-sans-stack: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --bg: 246 250 247;
-  --surface: 255 255 255;
-  --elevated: 241 247 243;
-  --line: 216 230 220;
-  --ink: 12 26 18;
-  --muted: 90 110 97;
-  --brand: 21 128 61;
-  --brand2: 22 163 74;
-  --glow: 34 197 94;
-}
-
-.dark {
   --bg: 7 15 11;
   --surface: 14 25 19;
   --elevated: 21 35 27;
@@ -106,6 +88,7 @@ body {
   top: -18rem;
   left: -10rem;
   background: rgb(var(--brand));
+  opacity: 0.28;
 }
 
 .aurora::after {
@@ -113,10 +96,6 @@ body {
   right: -14rem;
   background: rgb(var(--brand2));
   opacity: 0.14;
-}
-
-.dark .aurora::before {
-  opacity: 0.28;
 }
 
 @layer components {
@@ -131,7 +110,7 @@ body {
 
   /* Fio de luz na borda de cima. É o que dá relevo no escuro sem usar sombra
      pesada, que no fundo quase preto vira só um borrão. */
-  .dark .card::before {
+  .card::before {
     content: '';
     position: absolute;
     inset: 0;

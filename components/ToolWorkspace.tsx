@@ -1,9 +1,11 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   ArrowDownAZ,
+  ArrowLeft,
   ArrowUpZA,
   FileText,
   GripVertical,
@@ -75,7 +77,9 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   useEffect(() => {
     setEngine(getEngineStatus());
     const unsubscribe = subscribeEngineStatus(setEngine);
-    void warmEngine({ raster: tool.operation === 'compress' || tool.operation === 'pdf-to-images' });
+    void warmEngine({
+      raster: tool.operation === 'compress' || tool.operation === 'pdf-to-images' || tool.operation === 'ocr',
+    });
     return unsubscribe;
   }, [tool.operation]);
 
@@ -342,7 +346,14 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       )}
     >
       <header className="pb-8 pt-10 sm:pt-14">
-        <div className="flex items-start gap-4">
+        <Link
+          href="/#ferramentas"
+          className="inline-flex items-center gap-1.5 text-sm text-muted transition hover:text-ink"
+        >
+          <ArrowLeft className="h-4 w-4" /> Todas as ferramentas
+        </Link>
+
+        <div className="mt-5 flex items-start gap-4">
           <span
             className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border"
             style={{ background: `rgb(${tool.accent} / 0.12)`, borderColor: `rgb(${tool.accent} / 0.3)` }}

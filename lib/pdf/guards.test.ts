@@ -65,8 +65,11 @@ describe('validarFila', () => {
 
   it('recusa quando a soma com o que já está na fila estoura o teto', () => {
     // Cada arquivo cabe sozinho no teto individual; o problema é a soma.
-    const cabeSozinho = LIMITES.bytesPorArquivo - 1;
-    const jaNaFila = Array.from({ length: 2 }, () => ({ size: cabeSozinho }));
+    // Sem estourar o teto de quantidade de arquivos, então o tamanho de cada
+    // um precisa ser grande o bastante para a soma passar do teto total.
+    const necessarios = Math.ceil(LIMITES.bytesTotais / LIMITES.bytesPorArquivo) + 1;
+    const cabeSozinho = Math.floor(LIMITES.bytesTotais / (necessarios - 1));
+    const jaNaFila = Array.from({ length: necessarios - 1 }, () => ({ size: cabeSozinho }));
     expect(() => validarFila([arquivo('novo.pdf', cabeSozinho)], jaNaFila)).toThrow(/limite é/);
   });
 
