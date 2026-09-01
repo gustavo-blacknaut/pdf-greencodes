@@ -165,6 +165,34 @@ body {
   }
 }
 
+/*
+ * Aplicativo de desktop: uma cor só.
+ *
+ * No site o degradê e o brilho ajudam a vender. Numa ferramenta que a pessoa
+ * abre dez vezes por dia eles só cansam, então aqui o botão é chapado e o
+ * relevo dos cards sai de cena.
+ */
+.app-shell .btn-primary {
+  background-image: none;
+  background-color: rgb(var(--brand));
+  color: rgb(var(--bg));
+  box-shadow: none;
+}
+
+.app-shell .btn-primary:hover:not(:disabled) {
+  transform: none;
+  background-color: rgb(var(--brand2));
+  box-shadow: none;
+}
+
+.app-shell .card {
+  box-shadow: none;
+}
+
+.app-shell .card::before {
+  display: none;
+}
+
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;

@@ -9,20 +9,20 @@ export default function HomePage() {
       <section className="mx-auto max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24">
         <div className="mx-auto max-w-3xl text-center">
           <span className="chip animate-fade-up border-brand/30 text-brand">
-            <CloudOff className="h-3.5 w-3.5" /> Seu PDF nunca sai do seu computador
+            <CloudOff className="h-3.5 w-3.5" /> Seu PDF não sai do seu computador
           </span>
 
           <h1
             className="mt-6 animate-fade-up text-4xl font-semibold leading-[1.08] tracking-tight sm:text-6xl"
             style={{ animationDelay: '60ms' }}
           >
-            Todas as ferramentas de PDF.
+            Ferramentas de PDF.
             <br />
             <span
               className="bg-clip-text text-transparent"
               style={{ backgroundImage: 'linear-gradient(100deg, rgb(var(--brand)), rgb(var(--brand2)))' }}
             >
-              Zero upload.
+              Sem upload.
             </span>
           </h1>
 
@@ -30,8 +30,8 @@ export default function HomePage() {
             className="mx-auto mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-muted sm:text-lg"
             style={{ animationDelay: '120ms' }}
           >
-            Comprimir, juntar, dividir, assinar, editar, converter. Tudo acontece dentro do seu navegador. Sem fila,
-            sem conta e sem servidor guardando cópia. Baixou, apagou.
+            Comprimir, juntar, dividir, assinar, editar e converter. Tudo acontece dentro do navegador, sem fila,
+            sem conta e sem cópia guardada em servidor.
           </p>
 
           <div
@@ -72,8 +72,8 @@ export default function HomePage() {
         <div className="max-w-2xl">
           <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Como funciona</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted sm:text-base">
-            A diferença para os sites tradicionais é onde a conta é feita. Aqui o processamento acontece na sua
-            máquina. Por isso é mais rápido, e por isso não existe nada para vazar.
+            A conta é feita na sua máquina, e não num servidor nosso. É por isso que não existe fila e não existe
+            arquivo seu em lugar nenhum.
           </p>
         </div>
 
@@ -81,18 +81,18 @@ export default function HomePage() {
           {[
             {
               step: '01',
-              title: 'O motor carrega antes de você precisar',
-              body: 'Assim que a página abre e o navegador fica ocioso, as bibliotecas de PDF já são baixadas em segundo plano. Quando você escolhe a ferramenta, ela abre instantânea.',
+              title: 'As bibliotecas carregam antes',
+              body: 'Assim que a página abre e o navegador fica ocioso, o motor de PDF já vem em segundo plano. Quando você escolhe a ferramenta, ela abre pronta.',
             },
             {
               step: '02',
               title: 'O arquivo é lido, não enviado',
-              body: 'Ao soltar o PDF, ele é aberto na memória da aba: contamos as páginas e geramos a miniatura enquanto você ajusta as opções. Nenhum byte vai para a rede.',
+              body: 'Ao soltar o PDF ele é aberto na memória da aba: contamos as páginas e geramos a miniatura enquanto você ajusta as opções. Nenhum byte vai para a rede.',
             },
             {
               step: '03',
-              title: 'Baixou, apagou',
-              body: 'O resultado fica na memória por até 10 minutos, com contador visível. Pediu a segunda cópia, saiu da página ou o tempo acabou: ele é descartado na hora.',
+              title: 'O resultado tem prazo',
+              body: 'Ele fica na memória por até 10 minutos, com contador à vista. Se você baixar, sair da página ou o tempo acabar, é descartado.',
             },
           ].map((item) => (
             <li key={item.step} className="card p-6">
@@ -113,14 +113,14 @@ export default function HomePage() {
           }}
         >
           <h2 className="mx-auto max-w-xl text-2xl font-semibold tracking-tight sm:text-3xl">
-            Contrato honesto sobre seus documentos
+            Não temos onde guardar seus arquivos
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted sm:text-base">
-            Não temos servidor de arquivos, não temos banco de dados de uploads e não temos como ler o que você
-            processa, mesmo se quiséssemos. É consequência da arquitetura, não uma promessa.
+            Não existe servidor de upload nem banco de dados neste projeto. Não é uma política que a gente promete
+            cumprir: é o que dá para fazer com a arquitetura que está no ar.
           </p>
           <Link href="/privacidade" className="btn-ghost mt-7">
-            Ler os detalhes técnicos <ArrowRight className="h-4 w-4" />
+            Ver os detalhes técnicos <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </section>

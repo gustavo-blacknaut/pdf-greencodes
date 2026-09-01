@@ -6,12 +6,10 @@ export function Footer() {
     <footer className="mt-24 border-t">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_2fr]">
         <div>
-          <p className="text-lg font-semibold tracking-tight">
-            <span className="text-brand">PDF</span>.GreenCodes<span className="text-muted">.com.br</span>
-          </p>
+          <p className="text-lg font-semibold tracking-tight">PDF.GreenCodes</p>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted">
-            Ferramentas de PDF que rodam inteiras dentro do seu navegador. Sem upload, sem fila, sem conta. E o
-            resultado some da memória assim que o download termina.
+            Ferramentas de PDF que rodam dentro do navegador. Sem upload, sem fila e sem conta. O resultado sai da
+            memória assim que o download termina.
           </p>
         </div>
 
@@ -39,9 +37,9 @@ export function Footer() {
 
       <div className="border-t">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <p>© {new Date().getFullYear()} PDF GreenCodes. Processamento 100% local.</p>
+          <p>© {new Date().getFullYear()} PDF.GreenCodes</p>
           <Link href="/privacidade" className="transition hover:text-ink">
-            Como tratamos seus arquivos
+            O que acontece com seus arquivos
           </Link>
         </div>
       </div>
