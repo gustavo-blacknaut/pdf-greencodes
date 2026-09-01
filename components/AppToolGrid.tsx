@@ -71,8 +71,14 @@ export function AppToolGrid() {
       {visiveis.length === 0 ? (
         <p className="mt-10 text-center text-sm text-muted">Nenhuma ferramenta com esse nome.</p>
       ) : (
+        <>
+        <p className="mt-4 text-xs text-muted">
+          {visiveis.length === TOOLS.length
+            ? `${TOOLS.length} ferramentas`
+            : `${visiveis.length} de ${TOOLS.length} ferramentas`}
+        </p>
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {visiveis.map((tool) => (
+          {visiveis.map((tool, indice) => (
             <Link
               key={tool.slug}
               href={`/app/${tool.slug}`}
@@ -80,6 +86,7 @@ export function AppToolGrid() {
               onFocus={() => preparar(tool)}
               className="flex items-start gap-3 rounded-xl border border-line bg-surface p-3.5 transition hover:border-brand/50 hover:bg-elevated"
             >
+              <span className="w-5 shrink-0 pt-1.5 text-right text-[11px] tabular-nums text-muted">{indice + 1}</span>
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-bg text-brand">
                 <ToolIcon name={tool.icon} className="h-[18px] w-[18px]" />
               </span>
@@ -90,6 +97,7 @@ export function AppToolGrid() {
             </Link>
           ))}
         </div>
+        </>
       )}
     </div>
   );
