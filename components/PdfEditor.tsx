@@ -230,7 +230,7 @@ export function PdfEditor({
       </div>
 
       {preview?.rotacao !== 0 && preview && (
-        <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+        <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-400">
           Esta página tem rotação gravada no arquivo e aparece deitada aqui. O posicionamento continua correto no PDF
           final, mas fica mais fácil endireitar antes com a ferramenta Girar PDF.
         </p>
