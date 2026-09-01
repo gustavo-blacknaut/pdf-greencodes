@@ -1,7 +1,7 @@
 'use client';
 
 import { loadPdfJs, loadPdfLib } from './lazy';
-import { abortarSePreciso, LIMITES, pareceMesmoImagem, pareceMesmoPdf } from './guards';
+import { abortarSePreciso, LIMITES, pareceMesmoDocx, pareceMesmoImagem, pareceMesmoPdf } from './guards';
 import { hexParaRgb, paraCoordenadasPdf } from './layout';
 import { createOcrWorker, type OcrLanguage } from './ocr';
 import { parsePageRange, replaceExtension, suffixName, yieldToBrowser } from '../utils';
@@ -171,7 +171,9 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
     thumbnail: null,
   };
 
-  if (!base.type.startsWith('image/') && !base.name.toLowerCase().endsWith('.pdf')) {
+  const ehDocxPeloNome = base.name.toLowerCase().endsWith('.docx');
+
+  if (!base.type.startsWith('image/') && !base.name.toLowerCase().endsWith('.pdf') && !ehDocxPeloNome) {
     return { ...base, error: 'Formato não suportado.' };
   }
 
@@ -182,6 +184,13 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
       return { ...base, error: 'O conteúdo não corresponde a uma imagem JPG, PNG ou WebP.' };
     }
     return { ...base, pageCount: 1, thumbnail: await imageThumbnail(file) };
+  }
+
+  if (ehDocxPeloNome) {
+    if (!pareceMesmoDocx(bytes)) {
+      return { ...base, error: 'Este arquivo tem extensão .docx mas o conteúdo não é um documento Word válido.' };
+    }
+    return { ...base, pageCount: null };
   }
 
   if (!pareceMesmoPdf(bytes)) {
@@ -1471,6 +1480,159 @@ async function pdfToWord(ctx: RunContext): Promise<RunResult> {
   };
 }
 
+type ParagrafoDocx = { runs: { texto: string; negrito: boolean }[] };
+
+function decodificarEntidadesXml(texto: string): string {
+  return texto
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * Lê os parágrafos de um .docx com um parser XML mínimo, na unha, em vez de
+ * DOMParser: essa API não existe fora do navegador, e este mesmo motor roda
+ * em teste (Node). Cada <w:p> vira um item, cada <w:r> um run com o texto dos
+ * <w:t>, os <w:tab/> e as quebras manuais de <w:br/>.
+ */
+function lerParagrafosDoXml(documentXml: string): ParagrafoDocx[] {
+  const paragrafos: ParagrafoDocx[] = [];
+  const reParagrafo = /<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g;
+  let matchParagrafo: RegExpExecArray | null;
+  while ((matchParagrafo = reParagrafo.exec(documentXml))) {
+    // w:pPr guarda as propriedades do parágrafo (inclui a marca de fim de
+    // parágrafo, que pode ter seu próprio rPr): tirar isso fora evita
+    // confundir formatação do marcador com um run de texto de verdade.
+    const corpo = matchParagrafo[1].replace(/<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/g, '');
+    const runs: { texto: string; negrito: boolean }[] = [];
+    const reRun = /<w:r\b[^>]*>([\s\S]*?)<\/w:r>/g;
+    let matchRun: RegExpExecArray | null;
+    while ((matchRun = reRun.exec(corpo))) {
+      const runXml = matchRun[1];
+      const rPr = runXml.match(/<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>/)?.[1] ?? '';
+      const tagNegrito = rPr.match(/<w:b\b[^>]*\/?>/)?.[0];
+      const negrito = Boolean(tagNegrito) && !/w:val="(0|false)"/.test(tagNegrito!);
+
+      let texto = '';
+      const reConteudo = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/?>|<w:br\b[^>]*\/?>/g;
+      let matchConteudo: RegExpExecArray | null;
+      while ((matchConteudo = reConteudo.exec(runXml))) {
+        if (matchConteudo[0].startsWith('<w:tab')) texto += '\t';
+        else if (matchConteudo[0].startsWith('<w:br')) texto += '\n';
+        else texto += decodificarEntidadesXml(matchConteudo[1] ?? '');
+      }
+      if (texto) runs.push({ texto, negrito });
+    }
+    paragrafos.push({ runs });
+  }
+  return paragrafos;
+}
+
+async function lerParagrafosDocx(bytes: ArrayBuffer): Promise<ParagrafoDocx[]> {
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(bytes);
+  const documentXml = await zip.file('word/document.xml')?.async('string');
+  if (!documentXml) {
+    throw new Error('Não encontramos word/document.xml dentro do arquivo: não parece ser um .docx válido.');
+  }
+  return lerParagrafosDoXml(documentXml);
+}
+
+/**
+ * Converte um .docx num PDF, montando as páginas na mão a partir do texto dos
+ * parágrafos (o mesmo caminho de "PDF para Word", só que ao contrário). Só o
+ * texto atravessa: layout, colunas, imagens e tabelas do original não são
+ * preservados.
+ */
+async function wordToPdf(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
+  const outputs: OutputFile[] = [];
+  let inputBytes = 0;
+  let outputBytes = 0;
+  const notes: string[] = [
+    'Só o texto entra no PDF: layout, colunas, imagens e tabelas do documento original não são preservados.',
+  ];
+
+  const [largura, altura] = PAGE_SIZES.a4;
+  const margem = 56.7; // 20mm
+  const tamanhoFonte = 11;
+  const alturaLinha = tamanhoFonte * 1.4;
+  const larguraUtil = largura - margem * 2;
+
+  for (let f = 0; f < ctx.files.length; f += 1) {
+    const source = ctx.files[f];
+    inputBytes += source.size;
+    ctx.onProgress(f / ctx.files.length, `Lendo ${source.name}`);
+
+    const paragrafos = await lerParagrafosDocx(source.bytes);
+
+    const doc = await PDFDocument.create();
+    const fonte = await doc.embedFont(StandardFonts.Helvetica);
+    const fonteNegrito = await doc.embedFont(StandardFonts.HelveticaBold);
+
+    let pagina = doc.addPage([largura, altura]);
+    let y = altura - margem;
+    let algumTexto = false;
+
+    const novaPagina = () => {
+      pagina = doc.addPage([largura, altura]);
+      y = altura - margem;
+    };
+
+    for (const paragrafo of paragrafos) {
+      if (!paragrafo.runs.length) {
+        y -= alturaLinha;
+        if (y < margem) novaPagina();
+        continue;
+      }
+
+      let x = margem;
+      for (const run of paragrafo.runs) {
+        const fonteRun = run.negrito ? fonteNegrito : fonte;
+        const linhasDoRun = run.texto.replace(/\t/g, '    ').split('\n');
+        for (let li = 0; li < linhasDoRun.length; li += 1) {
+          const palavras = linhasDoRun[li].split(/\s+/).filter(Boolean);
+          for (const palavra of palavras) {
+            const larguraPalavra = fonteRun.widthOfTextAtSize(palavra, tamanhoFonte);
+            const espaco = x > margem ? fonteRun.widthOfTextAtSize(' ', tamanhoFonte) : 0;
+            if (x + espaco + larguraPalavra > margem + larguraUtil && x > margem) {
+              x = margem;
+              y -= alturaLinha;
+              if (y < margem) novaPagina();
+            } else {
+              x += espaco;
+            }
+            pagina.drawText(palavra, { x, y, size: tamanhoFonte, font: fonteRun, color: rgb(0.06, 0.06, 0.06) });
+            algumTexto = true;
+            x += larguraPalavra;
+          }
+          if (li < linhasDoRun.length - 1) {
+            x = margem;
+            y -= alturaLinha;
+            if (y < margem) novaPagina();
+          }
+        }
+      }
+      y -= alturaLinha;
+      if (y < margem) novaPagina();
+    }
+
+    await respirar(ctx);
+    const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+    outputBytes += blob.size;
+    outputs.push({ name: replaceExtension(source.name, 'pdf'), blob, pages: doc.getPageCount() });
+
+    if (!algumTexto) {
+      notes.push(`${source.name}: não encontramos texto dentro do documento.`);
+    }
+  }
+
+  ctx.onProgress(1);
+  return { files: outputs, inputBytes, outputBytes, notes };
+}
+
 /** Converte o formato bruto de imagem do pdf.js para um canvas. */
 function drawPdfImage(
   image: { width: number; height: number; kind?: number; data?: Uint8ClampedArray | Uint8Array; bitmap?: CanvasImageSource },
@@ -1751,6 +1913,7 @@ export const OPERATIONS = {
   'page-numbers': pageNumbers,
   repair,
   'pdf-to-word': pdfToWord,
+  'word-to-pdf': wordToPdf,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;
