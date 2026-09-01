@@ -1,9 +1,15 @@
 'use client';
 
 import {
+  ArrowUpDown,
   Combine,
+  Contrast,
   Crop,
   Eraser,
+  Heading,
+  Layers,
+  Shuffle,
+  Tags,
   FileImage,
   FileMinus,
   FilePlus,
@@ -30,9 +36,15 @@ import {
 } from 'lucide-react';
 
 const ICONS: Record<string, LucideIcon> = {
+  ArrowUpDown,
   Combine,
+  Contrast,
   Crop,
   Eraser,
+  Heading,
+  Layers,
+  Shuffle,
+  Tags,
   FileImage,
   FileMinus,
   FilePlus,

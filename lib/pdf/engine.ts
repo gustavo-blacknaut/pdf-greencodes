@@ -32,10 +32,7 @@ export type RunResult = {
   inputBytes: number;
   outputBytes: number;
   notes: string[];
-  /**
-   * Só as ferramentas em que encolher é o objetivo mostram o comparativo de
-   * tamanho. Num PDF para TXT, "economia de 100%" seria uma métrica sem sentido.
-   */
+  /** Comparativo de tamanho: só faz sentido onde encolher é o objetivo. */
   highlightSavings?: boolean;
 };
 
@@ -171,11 +168,16 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
     thumbnail: null,
   };
 
-  const ehDocxPeloNome = base.name.toLowerCase().endsWith('.docx');
+  const nomeMinusculo = base.name.toLowerCase();
+  const ehDocxPeloNome = nomeMinusculo.endsWith('.docx');
+  const ehTxtPeloNome = nomeMinusculo.endsWith('.txt');
 
-  if (!base.type.startsWith('image/') && !base.name.toLowerCase().endsWith('.pdf') && !ehDocxPeloNome) {
+  if (!base.type.startsWith('image/') && !nomeMinusculo.endsWith('.pdf') && !ehDocxPeloNome && !ehTxtPeloNome) {
     return { ...base, error: 'Formato não suportado.' };
   }
+
+  // Texto puro não tem assinatura para conferir nem estrutura para inspecionar.
+  if (ehTxtPeloNome) return { ...base, pageCount: null };
 
   // O conteúdo manda, não a extensão nem o MIME informado pelo sistema: os dois
   // são só rótulos e podem estar mentindo. Quem não passa daqui não chega ao parser.
@@ -1541,13 +1543,80 @@ async function lerParagrafosDocx(bytes: ArrayBuffer): Promise<ParagrafoDocx[]> {
 }
 
 /**
- * Converte um .docx num PDF, montando as páginas na mão a partir do texto dos
- * parágrafos (o mesmo caminho de "PDF para Word", só que ao contrário). Só o
- * texto atravessa: layout, colunas, imagens e tabelas do original não são
- * preservados.
+ * Desenha parágrafos de texto num PDF novo em A4, quebrando linha por largura
+ * e abrindo página quando a margem de baixo é alcançada.
+ *
+ * A fonte é Helvetica, que só cobre Latin-1. Caractere fora disso quebraria o
+ * `drawText`, então é trocado por "?" antes de entrar.
+ */
+async function pdfDeParagrafos(
+  paragrafos: ParagrafoDocx[],
+  tamanhoFonte: number,
+): Promise<{ doc: PdfDoc; algumTexto: boolean }> {
+  const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
+  const [largura, altura] = PAGE_SIZES.a4;
+  const margem = 56.7; // 20 mm
+  const alturaLinha = tamanhoFonte * 1.4;
+  const larguraUtil = largura - margem * 2;
+
+  const doc = await PDFDocument.create();
+  const fonte = await doc.embedFont(StandardFonts.Helvetica);
+  const fonteNegrito = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  let pagina = doc.addPage([largura, altura]);
+  let y = altura - margem;
+  let algumTexto = false;
+
+  const novaPagina = () => {
+    pagina = doc.addPage([largura, altura]);
+    y = altura - margem;
+  };
+
+  for (const paragrafo of paragrafos) {
+    if (!paragrafo.runs.length) {
+      y -= alturaLinha;
+      if (y < margem) novaPagina();
+      continue;
+    }
+
+    let x = margem;
+    for (const run of paragrafo.runs) {
+      const fonteRun = run.negrito ? fonteNegrito : fonte;
+      const linhas = sanitizeText(run.texto).replace(/\t/g, '    ').split('\n');
+      for (let li = 0; li < linhas.length; li += 1) {
+        for (const palavra of linhas[li].split(/\s+/).filter(Boolean)) {
+          const larguraPalavra = fonteRun.widthOfTextAtSize(palavra, tamanhoFonte);
+          const espaco = x > margem ? fonteRun.widthOfTextAtSize(' ', tamanhoFonte) : 0;
+          if (x + espaco + larguraPalavra > margem + larguraUtil && x > margem) {
+            x = margem;
+            y -= alturaLinha;
+            if (y < margem) novaPagina();
+          } else {
+            x += espaco;
+          }
+          pagina.drawText(palavra, { x, y, size: tamanhoFonte, font: fonteRun, color: rgb(0.06, 0.06, 0.06) });
+          algumTexto = true;
+          x += larguraPalavra;
+        }
+        if (li < linhas.length - 1) {
+          x = margem;
+          y -= alturaLinha;
+          if (y < margem) novaPagina();
+        }
+      }
+    }
+    y -= alturaLinha;
+    if (y < margem) novaPagina();
+  }
+
+  return { doc, algumTexto };
+}
+
+/**
+ * Converte um .docx num PDF a partir do texto dos parágrafos. Só o texto
+ * atravessa: layout, colunas, imagens e tabelas do original não são preservados.
  */
 async function wordToPdf(ctx: RunContext): Promise<RunResult> {
-  const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
   const outputs: OutputFile[] = [];
   let inputBytes = 0;
   let outputBytes = 0;
@@ -1555,82 +1624,295 @@ async function wordToPdf(ctx: RunContext): Promise<RunResult> {
     'Só o texto entra no PDF: layout, colunas, imagens e tabelas do documento original não são preservados.',
   ];
 
-  const [largura, altura] = PAGE_SIZES.a4;
-  const margem = 56.7; // 20mm
-  const tamanhoFonte = 11;
-  const alturaLinha = tamanhoFonte * 1.4;
-  const larguraUtil = largura - margem * 2;
-
   for (let f = 0; f < ctx.files.length; f += 1) {
     const source = ctx.files[f];
     inputBytes += source.size;
     ctx.onProgress(f / ctx.files.length, `Lendo ${source.name}`);
 
     const paragrafos = await lerParagrafosDocx(source.bytes);
-
-    const doc = await PDFDocument.create();
-    const fonte = await doc.embedFont(StandardFonts.Helvetica);
-    const fonteNegrito = await doc.embedFont(StandardFonts.HelveticaBold);
-
-    let pagina = doc.addPage([largura, altura]);
-    let y = altura - margem;
-    let algumTexto = false;
-
-    const novaPagina = () => {
-      pagina = doc.addPage([largura, altura]);
-      y = altura - margem;
-    };
-
-    for (const paragrafo of paragrafos) {
-      if (!paragrafo.runs.length) {
-        y -= alturaLinha;
-        if (y < margem) novaPagina();
-        continue;
-      }
-
-      let x = margem;
-      for (const run of paragrafo.runs) {
-        const fonteRun = run.negrito ? fonteNegrito : fonte;
-        const linhasDoRun = run.texto.replace(/\t/g, '    ').split('\n');
-        for (let li = 0; li < linhasDoRun.length; li += 1) {
-          const palavras = linhasDoRun[li].split(/\s+/).filter(Boolean);
-          for (const palavra of palavras) {
-            const larguraPalavra = fonteRun.widthOfTextAtSize(palavra, tamanhoFonte);
-            const espaco = x > margem ? fonteRun.widthOfTextAtSize(' ', tamanhoFonte) : 0;
-            if (x + espaco + larguraPalavra > margem + larguraUtil && x > margem) {
-              x = margem;
-              y -= alturaLinha;
-              if (y < margem) novaPagina();
-            } else {
-              x += espaco;
-            }
-            pagina.drawText(palavra, { x, y, size: tamanhoFonte, font: fonteRun, color: rgb(0.06, 0.06, 0.06) });
-            algumTexto = true;
-            x += larguraPalavra;
-          }
-          if (li < linhasDoRun.length - 1) {
-            x = margem;
-            y -= alturaLinha;
-            if (y < margem) novaPagina();
-          }
-        }
-      }
-      y -= alturaLinha;
-      if (y < margem) novaPagina();
-    }
+    const { doc, algumTexto } = await pdfDeParagrafos(paragrafos, 11);
 
     await respirar(ctx);
     const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
     outputBytes += blob.size;
     outputs.push({ name: replaceExtension(source.name, 'pdf'), blob, pages: doc.getPageCount() });
 
-    if (!algumTexto) {
-      notes.push(`${source.name}: não encontramos texto dentro do documento.`);
-    }
+    if (!algumTexto) notes.push(`${source.name}: não encontramos texto dentro do documento.`);
   }
 
   ctx.onProgress(1);
   return { files: outputs, inputBytes, outputBytes, notes };
+}
+
+/** Cada linha do .txt vira um parágrafo; o resto é o mesmo do .docx. */
+async function textToPdf(ctx: RunContext): Promise<RunResult> {
+  const tamanhoFonte = Math.max(7, Math.min(18, Number(ctx.options.size ?? 11)));
+  const outputs: OutputFile[] = [];
+  let inputBytes = 0;
+  let outputBytes = 0;
+
+  for (let f = 0; f < ctx.files.length; f += 1) {
+    const source = ctx.files[f];
+    inputBytes += source.size;
+    ctx.onProgress(f / ctx.files.length, `Lendo ${source.name}`);
+
+    const texto = new TextDecoder('utf-8').decode(source.bytes).replace(/\r\n?/g, '\n');
+    const paragrafos: ParagrafoDocx[] = texto
+      .split('\n')
+      .map((linha) => ({ runs: linha.trim() ? [{ texto: linha, negrito: false }] : [] }));
+
+    const { doc } = await pdfDeParagrafos(paragrafos, tamanhoFonte);
+    await respirar(ctx);
+    const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+    outputBytes += blob.size;
+    outputs.push({ name: replaceExtension(source.name, 'pdf'), blob, pages: doc.getPageCount() });
+  }
+
+  ctx.onProgress(1);
+  return {
+    files: outputs,
+    inputBytes,
+    outputBytes,
+    notes: ['O texto entra em Helvetica, com quebra de linha automática. Acentuação é preservada.'],
+  };
+}
+
+/** Inverte a ordem das páginas. Útil em digitalização feita de trás para frente. */
+async function reverse(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const origem = await openWithPdfLib(source.bytes, source.senha);
+  const total = origem.getPageCount();
+
+  const out = await PDFDocument.create();
+  const indices = Array.from({ length: total }, (_, i) => total - 1 - i);
+  const copiadas = await out.copyPages(origem, indices);
+  for (const pagina of copiadas) {
+    out.addPage(pagina);
+    await respirar(ctx);
+  }
+
+  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'invertido'), blob, pages: total }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [],
+  };
+}
+
+/**
+ * Intercala dois PDFs: página 1 do primeiro, página 1 do segundo, e assim por
+ * diante. É o caso do escâner sem duplex, que gera um arquivo com as frentes e
+ * outro com os versos — e os versos costumam sair na ordem contrária.
+ */
+async function interleave(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const [primeiro, segundo] = ctx.files;
+  if (!segundo) throw new Error('Escolha dois arquivos: um com as frentes e outro com os versos.');
+
+  const docA = await openWithPdfLib(primeiro.bytes, primeiro.senha);
+  const docB = await openWithPdfLib(segundo.bytes, segundo.senha);
+  const inverterSegundo = ctx.options.reverseSecond !== false;
+
+  const out = await PDFDocument.create();
+  const totalA = docA.getPageCount();
+  const totalB = docB.getPageCount();
+
+  const paginasA = await out.copyPages(docA, Array.from({ length: totalA }, (_, i) => i));
+  const ordemB = Array.from({ length: totalB }, (_, i) => (inverterSegundo ? totalB - 1 - i : i));
+  const paginasB = await out.copyPages(docB, ordemB);
+
+  const maior = Math.max(totalA, totalB);
+  for (let i = 0; i < maior; i += 1) {
+    if (i < totalA) out.addPage(paginasA[i]);
+    if (i < totalB) out.addPage(paginasB[i]);
+    ctx.onProgress(i / maior, `Intercalando ${i + 1}/${maior}`);
+    await respirar(ctx);
+  }
+
+  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const notes: string[] = [];
+  if (totalA !== totalB) {
+    notes.push(
+      `Os arquivos têm ${totalA} e ${totalB} páginas. As que sobraram foram para o fim, na ordem em que estavam.`,
+    );
+  }
+
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(primeiro.name, 'intercalado'), blob, pages: totalA + totalB }],
+    inputBytes: primeiro.size + segundo.size,
+    outputBytes: blob.size,
+    notes,
+  };
+}
+
+/**
+ * Converte para tons de cinza rasterizando cada página. Isso descarta o texto
+ * vetorial, então o resultado deixa de ser pesquisável — é o preço de garantir
+ * que nada saia colorido na impressão.
+ */
+async function grayscale(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const dpi = Math.max(72, Math.min(300, Number(ctx.options.dpi ?? 150)));
+  const doc = await openWithPdfJs(source.bytes, source.senha);
+  const out = await PDFDocument.create();
+  const canvas = document.createElement('canvas');
+
+  for (let i = 1; i <= doc.numPages; i += 1) {
+    ctx.onProgress((i - 1) / doc.numPages, `Página ${i} de ${doc.numPages}`);
+    const page = await doc.getPage(i);
+    const { widthPt, heightPt } = await renderPageToCanvas(page, dpi, canvas);
+
+    const pincel = canvas.getContext('2d');
+    if (pincel) {
+      const imagem = pincel.getImageData(0, 0, canvas.width, canvas.height);
+      const dados = imagem.data;
+      for (let p = 0; p < dados.length; p += 4) {
+        // Luminância perceptual: verde pesa mais que vermelho, que pesa mais
+        // que azul. A média simples achata contraste e suja o texto.
+        const cinza = Math.round(0.2126 * dados[p] + 0.7152 * dados[p + 1] + 0.0722 * dados[p + 2]);
+        dados[p] = cinza;
+        dados[p + 1] = cinza;
+        dados[p + 2] = cinza;
+      }
+      pincel.putImageData(imagem, 0, 0);
+    }
+
+    const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+    const embutida = await out.embedJpg(await jpeg.arrayBuffer());
+    out.addPage([widthPt, heightPt]).drawImage(embutida, { x: 0, y: 0, width: widthPt, height: heightPt });
+
+    page.cleanup();
+    await respirar(ctx);
+  }
+  await doc.destroy();
+
+  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'cinza'), blob, pages: doc.numPages }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: ['As páginas viraram imagem em tons de cinza, então o texto deixa de ser selecionável e pesquisável.'],
+  };
+}
+
+/**
+ * Achata formulários: o que estava preenchido vira conteúdo fixo da página e
+ * deixa de ser editável. Serve para enviar um formulário sem que a outra ponta
+ * mude os campos.
+ */
+async function flatten(ctx: RunContext): Promise<RunResult> {
+  const source = ctx.files[0];
+  const doc = await openWithPdfLib(source.bytes, source.senha);
+  const notes: string[] = [];
+
+  ctx.onProgress(0.3, 'Procurando campos de formulário...');
+  try {
+    const formulario = doc.getForm();
+    const campos = formulario.getFields().length;
+    if (campos > 0) {
+      formulario.flatten();
+      notes.push(`${campos} campo(s) de formulário viraram conteúdo fixo e não podem mais ser editados.`);
+    } else {
+      notes.push('Este PDF não tem campos de formulário. O arquivo foi só reescrito, sem outras mudanças.');
+    }
+  } catch {
+    notes.push('Não foi possível achatar os campos deste formulário. O arquivo saiu reescrito, sem alteração.');
+  }
+
+  ctx.onProgress(0.8, 'Salvando...');
+  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'achatado'), blob, pages: doc.getPageCount() }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes,
+  };
+}
+
+/** Carimba um texto fixo no topo e/ou no pé de cada página. */
+async function headerFooter(ctx: RunContext): Promise<RunResult> {
+  const { StandardFonts, rgb } = await loadPdfLib();
+  const source = ctx.files[0];
+  const doc = await openWithPdfLib(source.bytes, source.senha);
+  const fonte = await doc.embedFont(StandardFonts.Helvetica);
+  const paginas = doc.getPages();
+
+  const cabecalho = sanitizeText(String(ctx.options.header ?? '')).trim();
+  const rodape = sanitizeText(String(ctx.options.footer ?? '')).trim();
+  const alinhamento = String(ctx.options.align ?? 'centro');
+  const tamanho = Math.max(6, Math.min(24, Number(ctx.options.size ?? 10)));
+  const margem = PAGE_NUMBER_MARGIN_PT;
+
+  if (!cabecalho && !rodape) throw new Error('Escreva pelo menos o cabeçalho ou o rodapé.');
+
+  for (let i = 0; i < paginas.length; i += 1) {
+    ctx.onProgress(i / paginas.length, `Página ${i + 1}/${paginas.length}`);
+    const pagina = paginas[i];
+    const { width, height } = pagina.getSize();
+
+    for (const [texto, y] of [
+      [cabecalho, height - margem - tamanho],
+      [rodape, margem],
+    ] as const) {
+      if (!texto) continue;
+      const larguraTexto = fonte.widthOfTextAtSize(texto, tamanho);
+      const x =
+        alinhamento === 'esquerda'
+          ? margem
+          : alinhamento === 'direita'
+            ? width - margem - larguraTexto
+            : (width - larguraTexto) / 2;
+      pagina.drawText(texto, { x, y, size: tamanho, font: fonte, color: rgb(0.4, 0.45, 0.42) });
+    }
+    await respirar(ctx);
+  }
+
+  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'carimbado'), blob, pages: paginas.length }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [],
+  };
+}
+
+/**
+ * Escreve título, autor, assunto e palavras-chave. O contrário de "Limpar
+ * metadados", para quem precisa que o documento se identifique direito num
+ * acervo ou num sistema de busca.
+ */
+async function setMetadata(ctx: RunContext): Promise<RunResult> {
+  const source = ctx.files[0];
+  const doc = await openWithPdfLib(source.bytes, source.senha);
+
+  const titulo = sanitizeText(String(ctx.options.title ?? '')).trim();
+  const autor = sanitizeText(String(ctx.options.author ?? '')).trim();
+  const assunto = sanitizeText(String(ctx.options.subject ?? '')).trim();
+  const palavras = sanitizeText(String(ctx.options.keywords ?? '')).trim();
+
+  ctx.onProgress(0.4, 'Gravando os campos...');
+  doc.setTitle(titulo);
+  doc.setAuthor(autor);
+  doc.setSubject(assunto);
+  doc.setKeywords(palavras ? palavras.split(',').map((p) => p.trim()).filter(Boolean) : []);
+  doc.setModificationDate(new Date());
+
+  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'com-dados'), blob, pages: doc.getPageCount() }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: ['Campo deixado em branco é gravado vazio, apagando o que estava lá antes.'],
+  };
 }
 
 /** Converte o formato bruto de imagem do pdf.js para um canvas. */
@@ -1914,6 +2196,13 @@ export const OPERATIONS = {
   repair,
   'pdf-to-word': pdfToWord,
   'word-to-pdf': wordToPdf,
+  'text-to-pdf': textToPdf,
+  reverse,
+  interleave,
+  grayscale,
+  flatten,
+  'header-footer': headerFooter,
+  'set-metadata': setMetadata,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;

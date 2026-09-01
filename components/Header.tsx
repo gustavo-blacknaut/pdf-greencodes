@@ -26,20 +26,10 @@ export function Header() {
       )}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
-        <Link href="/" className="group flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo-128.png"
-            alt="PDF GreenCodes"
-            className="h-9 w-9 shrink-0 transition-transform group-hover:scale-105"
-          />
-          {/* A marca é o próprio endereço: quem chega aqui já sabe onde voltar. */}
-          <span className="text-[17px] font-semibold leading-none tracking-tight">
-            <span className="text-brand">PDF</span>
-            <span className="text-muted">.</span>
-            GreenCodes
-            <span className="hidden text-sm font-normal text-muted sm:inline">.com.br</span>
-          </span>
+          <img src="/logo-128.png" alt="" className="h-8 w-8 shrink-0" />
+          <span className="text-[17px] font-semibold leading-none tracking-tight">PDF.GreenCodes</span>
         </Link>
 
         <nav className="ml-auto hidden items-center gap-1 md:flex">
