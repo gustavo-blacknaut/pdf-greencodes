@@ -28,16 +28,17 @@ download preserva a cópia, porque é comum o navegador perguntar onde salvar. O
 
 ---
 
-## As 20 ferramentas
+## As 24 ferramentas
 
 | Organizar | Editar | Converter | Otimizar e privacidade |
 |---|---|---|---|
 | **Juntar PDF** | Assinar PDF | PDF para imagem | Comprimir PDF |
-| Organizar páginas | Editar PDF | Imagem para PDF | Proteger PDF |
-| Remover páginas | Girar PDF | PDF para texto | Desbloquear PDF |
-| Extrair páginas | Cortar PDF | Extrair imagens | Limpar metadados |
-| Dividir PDF | Redimensionar PDF | | |
-| Várias por folha | Marca d'água | | |
+| Organizar páginas | Editar PDF | Imagem para PDF | Reparar PDF |
+| Remover páginas | Girar PDF | PDF para texto | Proteger PDF |
+| Extrair páginas | Cortar PDF | PDF para Word | Desbloquear PDF |
+| Dividir PDF | Redimensionar PDF | OCR: PDF pesquisável | Limpar metadados |
+| Várias por folha | Marca d'água | Extrair imagens | |
+| | Numerar páginas | | |
 
 Quatro delas trabalham com uma **grade de miniaturas** em vez de formulário: organizar, remover,
 extrair e girar. Você vê o documento e clica nele. Outras duas abrem um **editor sobre a página**:
@@ -181,7 +182,7 @@ O arquivo que entra é de origem desconhecida, então:
 
 - validação por **conteúdo**, não por extensão: um `.pdf` que não traz a assinatura `%PDF-` no
   primeiro kilobyte é recusado antes de chegar ao pdf.js;
-- teto de 150 MB por arquivo, 300 MB por fila e 30 arquivos;
+- teto de 150 MB por arquivo, 1 GB por fila e 100 arquivos;
 - teto de 5 minutos por operação, com botão de cancelar sempre disponível;
 - teto de 300 miniaturas na grade;
 - pdf.js roda com `isEvalSupported: false`;
@@ -213,7 +214,8 @@ usuário renderizada como HTML, nem conteúdo de terceiros, o vetor de XSS é m�
 - Nenhuma requisição carrega o conteúdo do arquivo. Não existe endpoint de upload.
 - Sem analytics, sem pixels, sem contadores de uso, sem cookies, sem fontes externas, sem CDN.
   A telemetria do Next está desligada.
-- No `localStorage` fica apenas a preferência de tema.
+- O único uso de armazenamento local é o cache do motor de OCR (IndexedDB), guardado depois do
+  primeiro uso para não baixar de novo os mesmos poucos megabytes a cada vez.
 - A senha de Proteger e Desbloquear existe só em memória durante a operação.
 
 ---
@@ -229,10 +231,30 @@ rotação, e o motor apenas remonta o documento.
 
 ---
 
+## OCR: PDF pesquisável
+
+Digitalizado não tem texto embutido — só a imagem da página. A ferramenta **OCR: PDF pesquisável**
+roda um motor de reconhecimento inteiro dentro do navegador ([tesseract.js](https://github.com/naptha/tesseract.js),
+compilado para WebAssembly) e desenha o texto reconhecido, invisível, na posição de cada palavra por
+cima da imagem original. A página parece igual; o que muda é que agora dá para selecionar, copiar e
+pesquisar.
+
+Motor, worker e os pacotes de idioma (português e inglês) ficam em `public/tesseract/`, servidos pelo
+próprio site — sem CDN, mesmo princípio das outras ferramentas. Só baixam na primeira vez que a
+ferramenta roda; depois ficam em cache no IndexedDB.
+
+## PDF para Word
+
+Monta um `.docx` de verdade (é um zip de XML, sem biblioteca de terceiros para isso) a partir do
+mesmo texto que `PDF para texto` extrai. Só o texto atravessa: layout, colunas, imagens e tabelas do
+PDF original não são preservados. Para digitalizado, rode o OCR antes.
+
 ## O que ele não faz
 
-- **OCR e PDF para Word.** Precisam de modelos pesados. `PDF para texto` avisa quando o documento é
-  digitalizado e não tem texto a extrair.
+- **Reconhecer texto com perfeição.** OCR erra, principalmente em digitalizações de baixa qualidade.
+  A ferramenta mostra a confiança média do reconhecimento para você saber quando conferir.
+- **Preservar layout na conversão para Word.** Sai só o texto corrido, sem colunas, tabelas nem
+  imagens. Para manter a aparência exata, use `PDF para imagem`.
 - **Quebrar senha.** `Desbloquear PDF` só funciona com a senha correta em mãos.
 - **Arquivos gigantes em aparelhos fracos.** No navegador o limite é a RAM da aba. É o preço de não
   ter servidor — e é justamente onde o aplicativo de desktop se sai melhor.
@@ -242,8 +264,8 @@ rotação, e o motor apenas remonta o documento.
 ## Stack
 
 Next.js 16 (App Router, Turbopack, saída estática) · React 19 · TypeScript · Tailwind CSS 4 ·
-[@cantoo/pdf-lib](https://www.npmjs.com/package/@cantoo/pdf-lib) · pdf.js · JSZip · Vitest ·
-Electron.
+[@cantoo/pdf-lib](https://www.npmjs.com/package/@cantoo/pdf-lib) · pdf.js · [tesseract.js](https://github.com/naptha/tesseract.js) ·
+JSZip · Vitest · Electron.
 
 ## Deploy
 
