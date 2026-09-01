@@ -107,6 +107,27 @@ async function openWithPdfJs(bytes: ArrayBuffer, password?: string) {
   }).promise;
 }
 
+/**
+ * Grava o documento reaplicando a senha de abertura do original.
+ *
+ * Abrir um PDF protegido e salvar devolve um arquivo sem proteção nenhuma.
+ * Quem pôs senha num contrato não espera que comprimir ou girar as páginas
+ * publique o conteúdo, então a senha volta no resultado. Para tirar a senha de
+ * propósito existe a ferramenta de desbloqueio.
+ *
+ * `encrypt` não convive com object streams, então esse caminho grava sem eles.
+ */
+async function salvarPdf(doc: PdfDoc, senha?: string): Promise<Blob> {
+  if (!senha) return toPdfBlob(await doc.save({ useObjectStreams: true }));
+  doc.encrypt({ userPassword: senha, ownerPassword: senha });
+  return toPdfBlob(await doc.save({ useObjectStreams: false }));
+}
+
+/** Numa operação de vários arquivos, um protegido já protege o resultado. */
+function senhaDaFila(files: LoadedFile[]): string | undefined {
+  return files.find((file) => file.senha)?.senha;
+}
+
 /** PDFs com senha de abertura só podem ser lidos com ela, então tratamos à parte. */
 function isPasswordError(error: unknown): boolean {
   const name = (error as { name?: string })?.name ?? '';
@@ -562,7 +583,7 @@ async function compress(ctx: RunContext): Promise<RunResult> {
         await respirar(ctx);
       }
       await doc.destroy();
-      rasterized = toPdfBlob(await out.save({ useObjectStreams: true }));
+      rasterized = await salvarPdf(out, source.senha);
     }
 
     // Rasterizar destrói o texto vetorial: num PDF que já é só texto o arquivo
@@ -570,7 +591,7 @@ async function compress(ctx: RunContext): Promise<RunResult> {
     // com o menor dos dois.
     ctx.onProgress(fileBase + fileWeight * 0.9, `${source.name}: otimizando a estrutura`);
     const lossless = await openWithPdfLib(source.bytes, source.senha);
-    const losslessBlob = toPdfBlob(await lossless.save({ useObjectStreams: true }));
+    const losslessBlob = await salvarPdf(lossless, source.senha);
 
     let chosen = rasterized && rasterized.size < losslessBlob.size ? rasterized : losslessBlob;
     if (chosen.size >= source.size) {
@@ -631,7 +652,7 @@ async function merge(ctx: RunContext): Promise<RunResult> {
   }
 
   const name = String(ctx.options.filename || 'documento-unido').replace(/[\\/:*?"<>|]/g, '') || 'documento-unido';
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, senhaDaFila(ctx.files));
   ctx.onProgress(1);
 
   const notes: string[] = [];
@@ -720,7 +741,7 @@ async function split(ctx: RunContext): Promise<RunResult> {
     const out = await PDFDocument.create();
     const pages = await out.copyPages(doc, groups[i].indices);
     pages.forEach((page) => out.addPage(page));
-    const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+    const blob = await salvarPdf(out, source.senha);
     outputs.push({
       name: suffixName(source.name, `paginas-${groups[i].label}`),
       blob,
@@ -793,7 +814,7 @@ async function applyPlan(ctx: RunContext): Promise<RunResult> {
     out.addPage(page);
   });
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
 
   const removed = pageCount - plan.length;
@@ -861,7 +882,7 @@ async function watermark(ctx: RunContext): Promise<RunResult> {
     if (i % 12 === 11) await yieldToBrowser();
   }
 
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'marca-dagua'), blob, pages: pages.length }],
@@ -959,7 +980,7 @@ async function stripMetadata(ctx: RunContext): Promise<RunResult> {
   doc.setModificationDate(epoch);
 
   ctx.onProgress(0.6, 'Reescrevendo o documento');
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'limpo'), blob, pages: doc.getPageCount() }],
@@ -1071,7 +1092,7 @@ async function crop(ctx: RunContext): Promise<RunResult> {
   });
 
   ctx.onProgress(0.8, 'Aplicando o corte');
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'cortado'), blob, pages: pages.length }],
@@ -1133,7 +1154,7 @@ async function resize(ctx: RunContext): Promise<RunResult> {
     if (i % 20 === 19) await yieldToBrowser();
   }
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'redimensionado'), blob, pages: embedded.length }],
@@ -1199,7 +1220,7 @@ async function nUp(ctx: RunContext): Promise<RunResult> {
     await yieldToBrowser();
   }
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, `${perSheet}-por-folha`), blob, pages: out.getPageCount() }],
@@ -1315,7 +1336,7 @@ async function ocr(ctx: RunContext): Promise<RunResult> {
   }
   await doc.destroy();
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
   const confianca = totalPaginas ? Math.round(somaConfianca / totalPaginas) : 0;
   return {
@@ -1365,7 +1386,7 @@ async function pageNumbers(ctx: RunContext): Promise<RunResult> {
     await respirar(ctx);
   }
 
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'numerado'), blob, pages: paginas.length }],
@@ -1386,7 +1407,7 @@ async function repair(ctx: RunContext): Promise<RunResult> {
   ctx.onProgress(0.15, 'Lendo a estrutura do arquivo...');
   const doc = await openWithPdfLib(source.bytes, source.senha);
   ctx.onProgress(0.7, 'Reescrevendo o PDF do zero...');
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'reparado'), blob, pages: doc.getPageCount() }],
@@ -1692,7 +1713,7 @@ async function reverse(ctx: RunContext): Promise<RunResult> {
     await respirar(ctx);
   }
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'invertido'), blob, pages: total }],
@@ -1732,7 +1753,7 @@ async function interleave(ctx: RunContext): Promise<RunResult> {
     await respirar(ctx);
   }
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, senhaDaFila(ctx.files));
   const notes: string[] = [];
   if (totalA !== totalB) {
     notes.push(
@@ -1791,7 +1812,7 @@ async function grayscale(ctx: RunContext): Promise<RunResult> {
   }
   await doc.destroy();
 
-  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'cinza'), blob, pages: doc.numPages }],
@@ -1826,7 +1847,7 @@ async function flatten(ctx: RunContext): Promise<RunResult> {
   }
 
   ctx.onProgress(0.8, 'Salvando...');
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'achatado'), blob, pages: doc.getPageCount() }],
@@ -1874,7 +1895,7 @@ async function headerFooter(ctx: RunContext): Promise<RunResult> {
     await respirar(ctx);
   }
 
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'carimbado'), blob, pages: paginas.length }],
@@ -1905,13 +1926,212 @@ async function setMetadata(ctx: RunContext): Promise<RunResult> {
   doc.setKeywords(palavras ? palavras.split(',').map((p) => p.trim()).filter(Boolean) : []);
   doc.setModificationDate(new Date());
 
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   return {
     files: [{ name: suffixName(source.name, 'com-dados'), blob, pages: doc.getPageCount() }],
     inputBytes: source.size,
     outputBytes: blob.size,
     notes: ['Campo deixado em branco é gravado vazio, apagando o que estava lá antes.'],
+  };
+}
+
+/**
+ * Corta cada página em duas ou quatro partes, cada uma virando página própria.
+ *
+ * É o contrário de "Várias por folha", e o caso comum é livro digitalizado:
+ * o escâner pega as duas páginas abertas numa imagem só e aqui elas se separam.
+ */
+async function splitPages(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const origem = await openWithPdfLib(source.bytes, source.senha);
+  const modo = String(ctx.options.mode ?? 'vertical');
+  const paginas = origem.getPages();
+
+  const out = await PDFDocument.create();
+
+  for (let i = 0; i < paginas.length; i += 1) {
+    ctx.onProgress(i / paginas.length, `Página ${i + 1}/${paginas.length}`);
+    const { width, height } = paginas[i].getSize();
+
+    // Cada recorte é uma fatia da página original, de baixo para cima e da
+    // esquerda para a direita — mas a leitura começa em cima, então as linhas
+    // saem na ordem inversa.
+    const recortes =
+      modo === 'horizontal'
+        ? [
+            { left: 0, bottom: height / 2, right: width, top: height },
+            { left: 0, bottom: 0, right: width, top: height / 2 },
+          ]
+        : modo === 'quatro'
+          ? [
+              { left: 0, bottom: height / 2, right: width / 2, top: height },
+              { left: width / 2, bottom: height / 2, right: width, top: height },
+              { left: 0, bottom: 0, right: width / 2, top: height / 2 },
+              { left: width / 2, bottom: 0, right: width, top: height / 2 },
+            ]
+          : [
+              { left: 0, bottom: 0, right: width / 2, top: height },
+              { left: width / 2, bottom: 0, right: width, top: height },
+            ];
+
+    for (const recorte of recortes) {
+      const embutida = await out.embedPage(paginas[i], recorte);
+      const larguraParte = recorte.right - recorte.left;
+      const alturaParte = recorte.top - recorte.bottom;
+      out
+        .addPage([larguraParte, alturaParte])
+        .drawPage(embutida, { x: 0, y: 0, width: larguraParte, height: alturaParte });
+    }
+    await respirar(ctx);
+  }
+
+  const blob = await salvarPdf(out, source.senha);
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'dividido'), blob, pages: out.getPageCount() }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [`Cada página virou ${modo === 'quatro' ? 'quatro' : 'duas'}: ${paginas.length} entraram, ${out.getPageCount()} saíram.`],
+  };
+}
+
+/**
+ * Monta o documento para virar livreto: imprima frente e verso na borda curta,
+ * dobre a pilha ao meio e as páginas caem na ordem certa.
+ *
+ * Cada folha A4 deitada recebe duas páginas. Numa brochura grampeada no vinco,
+ * a primeira folha carrega a última página e a primeira juntas, a segunda
+ * carrega a penúltima e a segunda, e assim por diante.
+ */
+async function booklet(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const origem = await openWithPdfLib(source.bytes, source.senha);
+  const total = origem.getPageCount();
+
+  // A dobra só fecha em múltiplo de 4; o que falta entra como página em branco.
+  const comBrancos = Math.ceil(total / 4) * 4;
+  const primeira = origem.getPage(0).getSize();
+  const larguraFolha = primeira.width * 2;
+  const alturaFolha = primeira.height;
+
+  const out = await PDFDocument.create();
+  const embutidas = await out.embedPages(origem.getPages());
+
+  const ordem: (number | null)[] = [];
+  for (let i = 0; i < comBrancos / 2; i += 2) {
+    ordem.push(comBrancos - 1 - i, i); // frente da folha
+    ordem.push(i + 1, comBrancos - 2 - i); // verso
+  }
+
+  for (let i = 0; i < ordem.length; i += 2) {
+    ctx.onProgress(i / ordem.length, `Montando folha ${Math.floor(i / 2) + 1}`);
+    const folha = out.addPage([larguraFolha, alturaFolha]);
+    for (const [posicao, indice] of [ordem[i], ordem[i + 1]].entries()) {
+      if (indice === null || indice >= total) continue;
+      folha.drawPage(embutidas[indice], {
+        x: posicao * primeira.width,
+        y: 0,
+        width: primeira.width,
+        height: alturaFolha,
+      });
+    }
+    await respirar(ctx);
+  }
+
+  const blob = await salvarPdf(out, source.senha);
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'livreto'), blob, pages: out.getPageCount() }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [
+      'Imprima frente e verso virando na borda curta, dobre a pilha ao meio e grampeie no vinco.',
+      ...(comBrancos !== total ? [`Foram somadas ${comBrancos - total} página(s) em branco para fechar a dobra.`] : []),
+    ],
+  };
+}
+
+/** Separa o documento em dois: um com as páginas ímpares, outro com as pares. */
+async function oddEven(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const origem = await openWithPdfLib(source.bytes, source.senha);
+  const total = origem.getPageCount();
+
+  const impares = Array.from({ length: total }, (_, i) => i).filter((i) => i % 2 === 0);
+  const pares = Array.from({ length: total }, (_, i) => i).filter((i) => i % 2 === 1);
+
+  const saidas: OutputFile[] = [];
+  let outputBytes = 0;
+
+  for (const [rotulo, indices] of [
+    ['impares', impares],
+    ['pares', pares],
+  ] as const) {
+    if (!indices.length) continue;
+    ctx.onProgress(rotulo === 'impares' ? 0.2 : 0.6, `Separando as ${rotulo}`);
+    const out = await PDFDocument.create();
+    for (const pagina of await out.copyPages(origem, indices)) out.addPage(pagina);
+    const blob = await salvarPdf(out, source.senha);
+    outputBytes += blob.size;
+    saidas.push({ name: suffixName(source.name, rotulo), blob, pages: indices.length });
+    await respirar(ctx);
+  }
+
+  ctx.onProgress(1);
+  return {
+    files: saidas,
+    inputBytes: source.size,
+    outputBytes,
+    notes: [`${impares.length} página(s) ímpar(es) e ${pares.length} par(es), contando a partir de 1.`],
+  };
+}
+
+/** Insere folhas em branco, para imprimir frente e verso ou tomar nota. */
+async function blankPages(ctx: RunContext): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const origem = await openWithPdfLib(source.bytes, source.senha);
+  const onde = String(ctx.options.where ?? 'depois-de-cada');
+  const quantas = Math.max(1, Math.min(10, Math.round(Number(ctx.options.count ?? 1))));
+  const total = origem.getPageCount();
+
+  const out = await PDFDocument.create();
+  const copiadas = await out.copyPages(origem, Array.from({ length: total }, (_, i) => i));
+
+  const branco = (referencia: { width: number; height: number }) =>
+    out.addPage([referencia.width, referencia.height]);
+
+  if (onde === 'no-inicio') {
+    const tamanho = origem.getPage(0).getSize();
+    for (let n = 0; n < quantas; n += 1) branco(tamanho);
+  }
+
+  for (let i = 0; i < copiadas.length; i += 1) {
+    ctx.onProgress(i / copiadas.length, `Página ${i + 1}/${total}`);
+    const tamanho = copiadas[i].getSize();
+    out.addPage(copiadas[i]);
+    if (onde === 'depois-de-cada' && i < copiadas.length - 1) {
+      for (let n = 0; n < quantas; n += 1) branco(tamanho);
+    }
+    await respirar(ctx);
+  }
+
+  if (onde === 'no-fim') {
+    const tamanho = origem.getPage(total - 1).getSize();
+    for (let n = 0; n < quantas; n += 1) branco(tamanho);
+  }
+
+  const blob = await salvarPdf(out, source.senha);
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, 'com-brancos'), blob, pages: out.getPageCount() }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: [`O documento saiu com ${out.getPageCount()} páginas; entrou com ${total}.`],
   };
 }
 
@@ -2154,7 +2374,7 @@ async function edit(ctx: RunContext): Promise<RunResult> {
     await respirar(ctx);
   }
 
-  const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+  const blob = await salvarPdf(doc, source.senha);
   ctx.onProgress(1);
   const sufixo = ctx.options.editor === 'assinatura' ? 'assinado' : 'editado';
   return {
@@ -2203,6 +2423,10 @@ export const OPERATIONS = {
   flatten,
   'header-footer': headerFooter,
   'set-metadata': setMetadata,
+  'split-pages': splitPages,
+  booklet,
+  'odd-even': oddEven,
+  'blank-pages': blankPages,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;
@@ -2210,7 +2434,24 @@ export type OperationId = keyof typeof OPERATIONS;
 export async function runOperation(id: OperationId, ctx: RunContext): Promise<RunResult> {
   const operation = OPERATIONS[id];
   if (!operation) throw new Error(`Ferramenta desconhecida: ${id}`);
-  return operation(ctx);
+  const resultado = await operation(ctx);
+
+  // `salvarPdf` devolve a senha ao resultado. O aviso fica aqui, num lugar só,
+  // em vez de repetido em cada operação. Proteger e desbloquear ficam de fora:
+  // mexer na senha é justamente o trabalho delas.
+  const protegeu =
+    id !== 'protect' &&
+    id !== 'unlock' &&
+    ctx.files.some((file) => file.senha) &&
+    resultado.files.some((file) => file.name.toLowerCase().endsWith('.pdf'));
+
+  if (protegeu) {
+    return {
+      ...resultado,
+      notes: [...resultado.notes, 'O resultado continua protegido com a mesma senha do original.'],
+    };
+  }
+  return resultado;
 }
 
 export { zipFiles };
