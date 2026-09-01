@@ -3,12 +3,11 @@
 /**
  * Ponte com o aplicativo de desktop.
  *
- * O mesmo código de interface roda no site e no app. A diferença é o que
- * acontece com o resultado: no site ele vira um download e some da memória por
- * prazo; no app ele vai para o disco, no lugar que a pessoa escolher, e fica lá.
+ * A mesma interface roda nos dois lugares. No site o resultado vira download e
+ * expira; no app vai para o disco, onde a pessoa escolher.
  *
- * Tudo aqui degrada em silêncio quando `window.greenpdf` não existe, que é o
- * caso do site. Nenhuma tela precisa saber onde está rodando.
+ * Sem `window.greenpdf` — o caso do site — tudo aqui devolve vazio em silêncio,
+ * então nenhuma tela precisa saber onde está rodando.
  */
 
 export type ArquivoDoSistema = { nome: string; bytes: ArrayBuffer };
@@ -35,6 +34,11 @@ function ponte(): Ponte | null {
 
 export function estaNoAplicativo(): boolean {
   return ponte() !== null;
+}
+
+/** Versão do executável. No site não há o que perguntar, então volta vazio. */
+export async function versaoDoAplicativo(): Promise<string> {
+  return (await ponte()?.versao()) ?? '';
 }
 
 export async function salvarArquivo(nome: string, blob: Blob): Promise<ResultadoSalvar> {

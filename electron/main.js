@@ -11,18 +11,15 @@ const integracao = require('./integracao-windows');
 /**
  * PDF.GreenCodes para desktop.
  *
- * A diferença para o site não é a janela: é o que só um programa instalado
- * consegue fazer. Aqui existe menu do botão direito no Explorador, diálogo
- * nativo de salvar, abertura por clique duplo e nada de arquivo temporário com
- * prazo para expirar, porque o disco é o seu.
- *
- * O processamento continua sendo o mesmo do site, rodando dentro da janela.
- * Nenhum documento sai da máquina: não há requisição de rede em lugar nenhum.
+ * O que o app tem além do site: menu do botão direito no Explorador, diálogo
+ * nativo de salvar, abertura por clique duplo e resultado sem prazo de
+ * expiração. O processamento é o mesmo, rodando dentro da janela, e não há
+ * requisição de rede em lugar nenhum.
  */
 
 const PASTA_WEB = path.join(__dirname, '..', 'out');
 const HOST = '127.0.0.1';
-const EXTENSOES_ACEITAS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
+const EXTENSOES_ACEITAS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.docx', '.txt']);
 
 const TIPOS = {
   '.html': 'text/html; charset=utf-8',
@@ -152,8 +149,8 @@ function abrirJanela() {
     icon: path.join(__dirname, 'icone.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      // A interface não precisa de Node, e não tê-lo é a diferença entre uma
-      // falha de renderização e uma falha com acesso ao disco.
+      // A interface não precisa de Node. Sem ele, uma falha no render não vira
+      // acesso ao disco.
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -162,7 +159,9 @@ function abrirJanela() {
   });
 
   janela.once('ready-to-show', () => janela.show());
-  janela.loadURL(`http://${HOST}:${porta}/`);
+  // `/app` é a casca enxuta: barra com a versão e as ferramentas. A home do
+  // site, com apresentação e rodapé, não é carregada aqui.
+  janela.loadURL(`http://${HOST}:${porta}/app`);
 
   janela.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
@@ -203,7 +202,7 @@ function montarMenu() {
             const escolha = await dialog.showOpenDialog(janela, {
               title: 'Escolher arquivos',
               properties: ['openFile', 'multiSelections'],
-              filters: [{ name: 'PDF e imagens', extensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp'] }],
+              filters: [{ name: 'Arquivos aceitos', extensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'docx', 'txt'] }],
             });
             if (!escolha.canceled) await entregarArquivos(escolha.filePaths);
           },
@@ -398,7 +397,7 @@ function registrarCanais() {
   });
 
   ipcMain.handle('arquivo:escolher', async (_evento, { extensoes }) => {
-    const lista = Array.isArray(extensoes) && extensoes.length ? extensoes : ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const lista = Array.isArray(extensoes) && extensoes.length ? extensoes : ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'docx', 'txt'];
     const escolha = await dialog.showOpenDialog(janela, {
       title: 'Escolher arquivos',
       properties: ['openFile', 'multiSelections'],

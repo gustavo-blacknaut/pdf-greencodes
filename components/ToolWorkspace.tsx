@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowDownAZ,
@@ -70,6 +71,10 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const [engine, setEngine] = useState<EngineStatus>('cold');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
+  // A mesma tela serve o site e o aplicativo. No app o cabeçalho é enxuto: a
+  // navegação e os selos de confiança ficam de fora.
+  const noApp = usePathname().startsWith('/app');
+
   const resultIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cancelamentoManualRef = useRef(false);
@@ -99,6 +104,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       const aceitaPdf = tool.accept.includes('.pdf');
       const aceitaImagem = tool.accept.some((tipo) => tipo.startsWith('image/'));
       const aceitaDocx = tool.accept.includes('.docx');
+      const aceitaTxt = tool.accept.includes('.txt');
       const accepted = incoming.filter((file) => {
         const name = file.name.toLowerCase();
         const ehPdf = name.endsWith('.pdf') || file.type === 'application/pdf';
@@ -106,7 +112,10 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         const ehDocx =
           name.endsWith('.docx') ||
           file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-        return (aceitaPdf && ehPdf) || (aceitaImagem && ehImagem) || (aceitaDocx && ehDocx);
+        const ehTxt = name.endsWith('.txt');
+        return (
+          (aceitaPdf && ehPdf) || (aceitaImagem && ehImagem) || (aceitaDocx && ehDocx) || (aceitaTxt && ehTxt)
+        );
       });
 
       if (!accepted.length) {
@@ -349,18 +358,20 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         (tool.board || tool.editor) && phase !== 'done' ? 'max-w-6xl' : 'max-w-5xl',
       )}
     >
-      <header className="pb-8 pt-10 sm:pt-14">
-        <Link
-          href="/#ferramentas"
-          className="inline-flex items-center gap-1.5 text-sm text-muted transition hover:text-ink"
-        >
-          <ArrowLeft className="h-4 w-4" /> Todas as ferramentas
-        </Link>
+      <header className={cx('pb-8', noApp ? 'pt-6' : 'pt-10 sm:pt-14')}>
+        {!noApp && (
+          <Link
+            href="/#ferramentas"
+            className="inline-flex items-center gap-1.5 text-sm text-muted transition hover:text-ink"
+          >
+            <ArrowLeft className="h-4 w-4" /> Todas as ferramentas
+          </Link>
+        )}
 
-        <div className="mt-5 flex items-start gap-4">
+        <div className={cx('flex items-start gap-4', !noApp && 'mt-5')}>
           <span
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border"
-            style={{ background: `rgb(${tool.accent} / 0.12)`, borderColor: `rgb(${tool.accent} / 0.3)` }}
+            className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-line bg-elevated text-brand"
+            style={noApp ? undefined : { background: `rgb(${tool.accent} / 0.12)`, borderColor: `rgb(${tool.accent} / 0.3)` }}
           >
             <ToolIcon name={tool.icon} className="h-6 w-6" />
           </span>
@@ -371,12 +382,16 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <span className="chip">
-            <Lock className="h-3.5 w-3.5" /> Roda no seu navegador
-          </span>
-          <span className="chip">
-            <Sparkles className="h-3.5 w-3.5" /> Apaga depois do download
-          </span>
+          {!noApp && (
+            <>
+              <span className="chip">
+                <Lock className="h-3.5 w-3.5" /> Roda no seu navegador
+              </span>
+              <span className="chip">
+                <Sparkles className="h-3.5 w-3.5" /> Apaga depois do download
+              </span>
+            </>
+          )}
           <span className={cx('chip', engine === 'ready' && 'border-emerald-500/40 text-emerald-500')}>
             {engine === 'ready' ? (
               <>
@@ -384,7 +399,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
               </>
             ) : (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Pré-carregando motor...
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando motor...
               </>
             )}
           </span>
