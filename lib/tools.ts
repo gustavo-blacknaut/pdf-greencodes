@@ -675,6 +675,23 @@ export const TOOLS: Tool[] = [
     ],
   },
   {
+    slug: 'word-para-pdf',
+    operation: 'word-to-pdf',
+    name: 'Word para PDF',
+    tagline: 'O texto do .docx vira um PDF',
+    description:
+      'Lê os parágrafos de um .docx e monta um PDF em A4 com o texto formatado (negrito é preservado). Layout, colunas, imagens e tabelas do original não atravessam.',
+    icon: 'FileType2',
+    accent: '13 148 136',
+    category: 'Converter',
+    accept: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+    acceptLabel: 'DOCX',
+    multiple: true,
+    orderable: true,
+    cta: 'Converter para PDF',
+    fields: [],
+  },
+  {
     slug: 'pdf-para-word',
     operation: 'pdf-to-word',
     name: 'PDF para Word',
