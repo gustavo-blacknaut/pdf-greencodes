@@ -1,10 +1,9 @@
 /**
  * Barreiras aplicadas antes de qualquer parser tocar no arquivo.
  *
- * Nenhuma delas transforma o pdf.js num parser seguro: ele continua sendo
- * código complexo lendo formato hostil. O que elas fazem é reduzir a superfície
- * (só entra o que tem cara de PDF), limitar o estrago (teto de memória e de
- * tempo) e garantir que o usuário sempre consiga sair da operação.
+ * Elas não deixam o pdf.js seguro — continua sendo código complexo lendo
+ * formato hostil. O que fazem é reduzir a superfície (só entra o que tem cara
+ * de PDF), limitar memória e tempo, e deixar a operação sempre cancelável.
  */
 
 export const LIMITES = {
