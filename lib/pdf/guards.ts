@@ -62,6 +62,15 @@ export function pareceMesmoImagem(bytes: ArrayBuffer): boolean {
   return jpeg || png || webp;
 }
 
+/**
+ * .docx é um zip. A assinatura só garante "é um zip válido"; se o zip não
+ * tiver word/document.xml dentro, isso aparece depois, na hora de abrir.
+ */
+export function pareceMesmoDocx(bytes: ArrayBuffer): boolean {
+  const b = new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength));
+  return contem(b, [0x50, 0x4b, 0x03, 0x04], 0);
+}
+
 export function formatarLimite(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
