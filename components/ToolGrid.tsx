@@ -63,6 +63,7 @@ export function ToolGrid() {
               style={{ background: `rgb(${tool.accent})` }}
               aria-hidden
             />
+            <span className="absolute right-4 top-4 text-xs tabular-nums text-muted/70">{index + 1}</span>
             <span
               className="grid h-11 w-11 place-items-center rounded-xl border"
               style={{ background: `rgb(${tool.accent} / 0.12)`, borderColor: `rgb(${tool.accent} / 0.28)` }}
