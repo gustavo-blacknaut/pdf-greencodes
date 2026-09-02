@@ -98,6 +98,16 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const abortRef = useRef<AbortController | null>(null);
   const cancelamentoManualRef = useRef(false);
 
+  /**
+   * Nome do arquivo escolhido -> id do marcador que já está na tela.
+   *
+   * É ref, e não estado, porque quem lê é o callback que o Dropzone guardou
+   * antes da leitura começar. Lendo o estado dali vinha a lista de antes do
+   * marcador existir, o marcador nunca era reaproveitado, e o arquivo
+   * aparecia duas vezes — um preso em "carregando" para sempre.
+   */
+  const marcadoresRef = useRef(new Map<string, string>());
+
   useEffect(() => {
     // O app tem a memória da máquina; a aba do navegador, não.
     usarLimitesDoAplicativo(estaNoAplicativo());
@@ -146,13 +156,11 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       }
 
       setItems((atuais) => {
-        const novos = escolhidos.map((e) => ({
-          id: nextId(),
-          name: e.nome,
-          size: e.tamanho,
-          loading: true,
-          etapa: 'Na fila',
-        }));
+        const novos = escolhidos.map((e) => {
+          const id = nextId();
+          marcadoresRef.current.set(e.nome, id);
+          return { id, name: e.nome, size: e.tamanho, loading: true, etapa: 'Na fila' };
+        });
         return tool.multiple ? [...atuais, ...novos] : novos;
       });
     },
@@ -160,6 +168,14 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   );
 
   /** Barra de leitura de cada arquivo, vinda do processo principal. */
+  /** Tira da tela o marcador de um arquivo que não conseguiu ser lido. */
+  const descartarMarcadores = useCallback((nomes: string[], erro: string) => {
+    const ids = new Set(nomes.map((n) => marcadoresRef.current.get(n)).filter(Boolean));
+    for (const nome of nomes) marcadoresRef.current.delete(nome);
+    setItems((atuais) => atuais.filter((item) => !ids.has(item.id)));
+    setError(erro);
+  }, []);
+
   const marcarLeitura = useCallback((nome: string, lidos: number, total: number) => {
     const pct = Math.round((lidos / total) * 100);
     setItems((atuais) =>
@@ -207,13 +223,13 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       }
 
       // O marcador criado em mostrarEscolhidos já está na tela com este nome.
-      // Reaproveitar o id evita o arquivo aparecer duas vezes.
-      const pendentes = new Map(items.filter((i) => i.loading && !i.data).map((i) => [i.name, i.id]));
+      // Reaproveitar o id dele evita o arquivo aparecer duas vezes.
+      const marcadores = marcadoresRef.current;
 
       const batch = (tool.multiple ? accepted : accepted.slice(0, 1)).map((file) => ({
         file,
         item: {
-          id: pendentes.get(file.name) ?? nextId(),
+          id: marcadores.get(file.name) ?? nextId(),
           name: file.name,
           size: file.size,
           loading: true,
@@ -221,6 +237,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         } satisfies Item,
       }));
 
+      for (const { file } of batch) marcadores.delete(file.name);
       setItems((current) => {
         const novos = batch.map((b) => b.item);
         if (!tool.multiple) return novos;
@@ -540,6 +557,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           accept={tool.accept}
                   onEscolhidos={mostrarEscolhidos}
                   onLendo={marcarLeitura}
+                  onFalha={descartarMarcadores}
           acceptLabel={tool.acceptLabel}
           multiple={tool.multiple}
           onFiles={addFiles}
@@ -719,6 +737,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
                   accept={tool.accept}
                   onEscolhidos={mostrarEscolhidos}
                   onLendo={marcarLeitura}
+                  onFalha={descartarMarcadores}
                   acceptLabel={tool.acceptLabel}
                   multiple
                   compact
