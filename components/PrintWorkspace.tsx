@@ -119,8 +119,16 @@ export function PrintWorkspace() {
 
   // 1 = uma página por folha, sem montagem. Acima disso o documento é
   // remontado antes da prévia, para o que aparece ser o que sai impresso.
+  // Vazio = todas. Aceita "1-5, 8, 11-" como a ferramenta de dividir.
+  const [intervalo, setIntervalo] = useState('');
   const [porFolha, setPorFolha] = useState(1);
-  const [montado, setMontado] = useState<{ id: string; porFolha: number; blob: Blob; paginas: number } | null>(null);
+  const [montado, setMontado] = useState<{
+    id: string;
+    porFolha: number;
+    intervalo: string;
+    blob: Blob;
+    paginas: number;
+  } | null>(null);
   const [montando, setMontando] = useState(false);
 
   // 0 = manda o arquivo inteiro de uma vez. Acima disso ele é fatiado e vai
@@ -263,12 +271,19 @@ export function PrintWorkspace() {
   /** O que vale para prévia e impressão: o montado, quando há montagem. */
   function paraSaida(alvo: ItemFila | null): { blob: Blob; paginas: number } | null {
     if (!alvo?.blob) return null;
-    if (montado && montado.id === alvo.id && montado.porFolha === porFolha) {
+    if (
+      montado &&
+      montado.id === alvo.id &&
+      montado.porFolha === porFolha &&
+      montado.intervalo === intervalo
+    ) {
       return { blob: montado.blob, paginas: montado.paginas };
     }
     // Enquanto a montagem não termina, não vale desenhar o original: a
     // prévia mostraria uma coisa e a impressora sairia com outra.
-    return porFolha > 1 ? null : { blob: alvo.blob, paginas: alvo.paginas };
+    // Enquanto o preparo não termina, não vale desenhar o original: a prévia
+    // mostraria uma coisa e a impressora sairia com outra.
+    return porFolha > 1 || intervalo.trim() ? null : { blob: alvo.blob, paginas: alvo.paginas };
   }
 
   /** Abre o documento escolhido uma vez e guarda a referência. */
@@ -363,38 +378,64 @@ export function PrintWorkspace() {
   }, [pagina, docPronto, zoom, larguraDisponivel]);
 
   /**
-   * Remonta o arquivo escolhido com N páginas por folha.
+   * Prepara o que vai sair: primeiro escolhe as páginas, depois monta as
+   * folhas.
    *
-   * A prévia tem que mostrar o que sai da impressora, então a montagem
-   * acontece antes de desenhar, e não na hora de imprimir.
+   * Nessa ordem, e não na contrária: escolher "1-4" com 4 por folha tem que
+   * dar uma folha com as quatro primeiras páginas, não a primeira folha de um
+   * documento já montado.
+   *
+   * O preparo acontece antes de desenhar, e não na hora de imprimir, para a
+   * prévia mostrar o que sai da impressora.
    */
   useEffect(() => {
-    if (!item?.blob || porFolha <= 1) {
+    const semPreparo = porFolha <= 1 && !intervalo.trim();
+    if (!item?.blob || semPreparo) {
       setMontado(null);
       return;
     }
-    if (montado?.id === item.id && montado.porFolha === porFolha) return;
+    if (montado?.id === item.id && montado.porFolha === porFolha && montado.intervalo === intervalo) return;
 
     let vivo = true;
     void (async () => {
       setMontando(true);
       try {
-        const arquivo = new File([item.blob!], item.nome, { type: 'application/pdf' });
-        const carregado = await inspectFile(arquivo, item.id);
-        const r = await runOperation('n-up', {
-          files: [carregado],
-          options: { perSheet: porFolha, espacamentoMm: 2, margemMm: 4, border: false },
-          onProgress: () => {},
-        });
+        let blob = item.blob!;
+
+        if (intervalo.trim()) {
+          const arquivo = new File([blob], item.nome, { type: 'application/pdf' });
+          const carregado = await inspectFile(arquivo, item.id);
+          const r = await runOperation('split', {
+            files: [carregado],
+            options: { mode: 'extract', extractRanges: intervalo },
+            onProgress: () => {},
+          });
+          blob = r.files[0].blob;
+        }
+
+        if (porFolha > 1) {
+          const arquivo = new File([blob], item.nome, { type: 'application/pdf' });
+          const carregado = await inspectFile(arquivo, item.id);
+          const r = await runOperation('n-up', {
+            files: [carregado],
+            options: { perSheet: porFolha, espacamentoMm: 2, margemMm: 4, border: false },
+            onProgress: () => {},
+          });
+          blob = r.files[0].blob;
+        }
+
+        const pdfjs = await loadPdfJs();
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+        const paginas = doc.numPages;
+        await doc.destroy();
+
         if (!vivo) return;
-        setMontado({
-          id: item.id,
-          porFolha,
-          blob: r.files[0].blob,
-          paginas: r.files[0].pages ?? 1,
-        });
-      } catch {
-        if (vivo) setMontado(null);
+        setMontado({ id: item.id, porFolha, intervalo, blob, paginas });
+        setErroGeral(null);
+      } catch (e) {
+        if (!vivo) return;
+        setMontado(null);
+        setErroGeral(e instanceof Error ? e.message : 'Não foi possível preparar as páginas.');
       } finally {
         if (vivo) setMontando(false);
       }
@@ -404,7 +445,7 @@ export function PrintWorkspace() {
       vivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.id, item?.blob, porFolha]);
+  }, [item?.id, item?.blob, porFolha, intervalo]);
 
   // A prévia acompanha o tamanho da janela: sem isso ela fica pequena no
   // monitor grande e estourada no pequeno.
@@ -628,6 +669,7 @@ export function PrintWorkspace() {
             opcoes={opcoes}
             impressoras={impressoras}
             noApp={noApp}
+            intervalo={intervalo}
             porFolha={porFolha}
             montando={montando}
             lote={lote}
@@ -636,6 +678,7 @@ export function PrintWorkspace() {
             preparando={preparando}
             aviso={aviso}
             onMudar={mudar}
+            onIntervalo={setIntervalo}
             onPorFolha={setPorFolha}
             onLote={setLote}
             onImprimir={() => void imprimirTudo()}

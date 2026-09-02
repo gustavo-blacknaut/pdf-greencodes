@@ -56,6 +56,19 @@ export type OpcoesImpressao = {
   duplex?: 'simplex' | 'shortEdge' | 'longEdge';
   papel?: 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid';
   dpi?: number;
+  /** Margem em milímetros. Nos lados e em cima/embaixo, separadas. */
+  margemLadosMm?: number;
+  margemCimaMm?: number;
+  /** Como a página se encaixa na folha. */
+  ajuste?: 'pagina' | 'preencher' | 'original';
+  /**
+   * Abre o diálogo do Windows em vez de mandar direto.
+   *
+   * É o único caminho garantido para os ajustes do driver — tipo de papel,
+   * padrão fino ou grosso, melhor qualidade de imagem. A impressão silenciosa
+   * monta os ajustes por conta própria e pode ignorar o que está salvo lá.
+   */
+  usarDialogo?: boolean;
 };
 
 export type ResultadoSalvar = { ok: boolean; caminho?: string; cancelado?: boolean; erro?: string };
