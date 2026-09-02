@@ -29,8 +29,18 @@ contextBridge.exposeInMainWorld('greenpdf', {
   /** Escolhe uma pasta e grava vários arquivos de uma vez. */
   salvarVarios: (arquivos) => ipcRenderer.invoke('arquivo:salvar-varios', { arquivos }),
 
-  /** Diálogo nativo de abrir. Devolve nome e conteúdo de cada escolhido. */
+  /** Diálogo nativo de abrir. Devolve nome, caminho e tamanho — sem ler. */
   escolherArquivos: (extensoes) => ipcRenderer.invoke('arquivo:escolher', { extensoes }),
+
+  /** Lê um arquivo escolhido. O progresso chega por aoLerArquivo. */
+  lerArquivo: (caminho) => ipcRenderer.invoke('arquivo:ler', { caminho }),
+
+  /** Quanto já foi lido do arquivo que está carregando. */
+  aoLerArquivo: (callback) => {
+    const ouvinte = (_evento, dados) => callback(dados);
+    ipcRenderer.on('arquivo:lendo', ouvinte);
+    return () => ipcRenderer.off('arquivo:lendo', ouvinte);
+  },
 
   /** Abre as Preferências do driver, onde fica o tipo/espessura do papel. */
   preferenciasDaImpressora: (impressora) => ipcRenderer.invoke('impressora:preferencias', { impressora }),

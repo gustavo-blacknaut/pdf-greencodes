@@ -36,11 +36,17 @@ import {
   type PagePlanItem,
   type RunResult,
 } from '@/lib/pdf/engine';
-import { LIMITES, OperacaoCancelada, validarFila } from '@/lib/pdf/guards';
+import {
+  AVISO_ARQUIVO_GRANDE,
+  LIMITES,
+  OperacaoCancelada,
+  usarLimitesDoAplicativo,
+  validarFila,
+} from '@/lib/pdf/guards';
 import { getEngineStatus, subscribeEngineStatus, warmEngine, type EngineStatus } from '@/lib/pdf/lazy';
 import { defaultOptions, isFieldVisible, type BoardMode, type Tool } from '@/lib/tools';
 import { cx, formatBytes } from '@/lib/utils';
-import { aoReceberArquivosDoSistema } from '@/lib/desktop';
+import { aoReceberArquivosDoSistema, estaNoAplicativo, type ArquivoEscolhido } from '@/lib/desktop';
 
 const BOARD_HINTS: Record<BoardMode, string> = {
   organize: 'Arraste as miniaturas para reordenar. Passe o mouse numa página para girar ou excluir.',
@@ -54,6 +60,8 @@ type Item = {
   name: string;
   size: number;
   loading: boolean;
+  /** "Lendo 42%", "Abrindo o PDF" — o que está acontecendo com este arquivo. */
+  etapa?: string;
   data?: LoadedFile;
   error?: string;
 };
@@ -70,6 +78,9 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const [progress, setProgress] = useState({ fraction: 0, label: '' });
   const [result, setResult] = useState<{ id: string; data: RunResult; elapsed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Separado do erro de propósito: o fluxo normal limpa o erro a cada passo,
+  // e o aviso de arquivo grande sumiria antes de alguém ler.
+  const [aviso, setAviso] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineStatus>('cold');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
@@ -88,6 +99,8 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const cancelamentoManualRef = useRef(false);
 
   useEffect(() => {
+    // O app tem a memória da máquina; a aba do navegador, não.
+    usarLimitesDoAplicativo(estaNoAplicativo());
     setEngine(getEngineStatus());
     const unsubscribe = subscribeEngineStatus(setEngine);
     void warmEngine({
@@ -103,6 +116,60 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
     },
     [],
   );
+
+  /**
+   * Mostra os arquivos assim que a pessoa escolhe, antes de ler o conteúdo.
+   *
+   * A validação de tamanho também acontece aqui: um arquivo acima do limite
+   * era recusado só depois de ser lido inteiro, o que num arquivo grande
+   * significa esperar muito para receber um "não".
+   */
+  const mostrarEscolhidos = useCallback(
+    (escolhidos: ArquivoEscolhido[]) => {
+      setError(null);
+      setAviso(null);
+      try {
+        validarFila(
+          escolhidos.map((e) => ({ name: e.nome, size: e.tamanho })),
+          tool.multiple ? items : [],
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Arquivo recusado.');
+        return;
+      }
+
+      const grande = escolhidos.find((e) => e.tamanho > AVISO_ARQUIVO_GRANDE);
+      if (grande) {
+        setAviso(
+          `"${grande.nome}" tem ${formatBytes(grande.tamanho)}. Vai demorar, e em máquina com pouca memória pode não terminar.`,
+        );
+      }
+
+      setItems((atuais) => {
+        const novos = escolhidos.map((e) => ({
+          id: nextId(),
+          name: e.nome,
+          size: e.tamanho,
+          loading: true,
+          etapa: 'Na fila',
+        }));
+        return tool.multiple ? [...atuais, ...novos] : novos;
+      });
+    },
+    [items, tool.multiple],
+  );
+
+  /** Barra de leitura de cada arquivo, vinda do processo principal. */
+  const marcarLeitura = useCallback((nome: string, lidos: number, total: number) => {
+    const pct = Math.round((lidos / total) * 100);
+    setItems((atuais) =>
+      atuais.map((item) =>
+        item.name === nome && item.loading
+          ? { ...item, etapa: `Lendo ${pct}% · ${formatBytes(lidos)} de ${formatBytes(total)}` }
+          : item,
+      ),
+    );
+  }, []);
 
   const addFiles = useCallback(
     (incoming: File[]) => {
@@ -139,12 +206,28 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         return;
       }
 
+      // O marcador criado em mostrarEscolhidos já está na tela com este nome.
+      // Reaproveitar o id evita o arquivo aparecer duas vezes.
+      const pendentes = new Map(items.filter((i) => i.loading && !i.data).map((i) => [i.name, i.id]));
+
       const batch = (tool.multiple ? accepted : accepted.slice(0, 1)).map((file) => ({
         file,
-        item: { id: nextId(), name: file.name, size: file.size, loading: true } satisfies Item,
+        item: {
+          id: pendentes.get(file.name) ?? nextId(),
+          name: file.name,
+          size: file.size,
+          loading: true,
+          etapa: 'Abrindo o documento...',
+        } satisfies Item,
       }));
 
-      setItems((current) => (tool.multiple ? [...current, ...batch.map((b) => b.item)] : batch.map((b) => b.item)));
+      setItems((current) => {
+        const novos = batch.map((b) => b.item);
+        if (!tool.multiple) return novos;
+
+        const substituidos = new Set(novos.map((n) => n.id));
+        return [...current.filter((i) => !substituidos.has(i.id)), ...novos];
+      });
 
       // Pré-carregamento: enquanto o usuário ajusta as opções, já lemos o
       // arquivo, contamos as páginas e geramos a miniatura.
@@ -332,6 +415,13 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
 
   const actionBlock = (
     <>
+      {aviso && (
+        <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{aviso}</span>
+        </div>
+      )}
+
       {error && (
         <div className="flex gap-2.5 rounded-xl border border-rose-500/40 bg-rose-500/5 p-3 text-xs leading-relaxed text-rose-500">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -448,6 +538,8 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       ) : items.length === 0 ? (
         <Dropzone
           accept={tool.accept}
+                  onEscolhidos={mostrarEscolhidos}
+                  onLendo={marcarLeitura}
           acceptLabel={tool.acceptLabel}
           multiple={tool.multiple}
           onFiles={addFiles}
@@ -573,7 +665,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
                       {item.error
                         ? item.error
                         : item.loading
-                          ? 'Lendo...'
+                          ? (item.etapa ?? 'Lendo...')
                           : `${formatBytes(item.size)}${item.data?.pageCount ? ` · ${item.data.pageCount} páginas` : ''}`}
                     </p>
                   </div>
@@ -625,6 +717,8 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
               <div className="mt-3">
                 <Dropzone
                   accept={tool.accept}
+                  onEscolhidos={mostrarEscolhidos}
+                  onLendo={marcarLeitura}
                   acceptLabel={tool.acceptLabel}
                   multiple
                   compact

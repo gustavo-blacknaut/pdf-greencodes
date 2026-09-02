@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { CloudOff, FolderOpen, UploadCloud } from 'lucide-react';
 import { cx } from '@/lib/utils';
-import { escolherArquivos, estaNoAplicativo } from '@/lib/desktop';
+import {
+  aoLerArquivo,
+  escolherArquivos,
+  estaNoAplicativo,
+  lerArquivoEscolhido,
+  type ArquivoEscolhido,
+} from '@/lib/desktop';
 
 export function Dropzone({
   accept,
@@ -11,12 +17,18 @@ export function Dropzone({
   multiple,
   compact,
   onFiles,
+  onEscolhidos,
+  onLendo,
 }: {
   accept: string[];
   acceptLabel: string;
   multiple: boolean;
   compact?: boolean;
   onFiles: (files: File[]) => void;
+  /** Avisado assim que a pessoa escolhe, antes de ler o conteúdo. */
+  onEscolhidos?: (escolhidos: ArquivoEscolhido[]) => void;
+  /** Quanto já foi lido de cada arquivo. */
+  onLendo?: (nome: string, lidos: number, total: number) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -34,8 +46,33 @@ export function Dropzone({
       inputRef.current?.click();
       return;
     }
+
     const escolhidos = await escolherArquivos(accept.filter((tipo) => tipo.startsWith('.')));
-    if (escolhidos.length) onFiles(multiple ? escolhidos : escolhidos.slice(0, 1));
+    if (!escolhidos.length) return;
+
+    const lista = multiple ? escolhidos : escolhidos.slice(0, 1);
+    // A tela mostra os arquivos aqui, antes de ler: é o que faltava para não
+    // ficar tudo mudo enquanto um arquivo grande carrega.
+    onEscolhidos?.(lista);
+
+    const cancelar = onLendo
+      ? aoLerArquivo(({ caminho, lidos, total }) => {
+          const alvo = lista.find((e) => e.caminho === caminho);
+          if (alvo) onLendo(alvo.nome, lidos, total);
+        })
+      : () => {};
+
+    try {
+      const arquivos: File[] = [];
+      // Um de cada vez: dois arquivos de 400 MB lidos juntos dobram a memória
+      // sem adiantar nada, porque o disco é o mesmo.
+      for (const escolhido of lista) {
+        arquivos.push(await lerArquivoEscolhido(escolhido));
+      }
+      onFiles(arquivos);
+    } finally {
+      cancelar();
+    }
   }
 
   // Colar um arquivo (Ctrl+V) é o caminho mais rápido depois de um print.

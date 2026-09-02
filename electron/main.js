@@ -438,6 +438,15 @@ function registrarCanais() {
     }
   });
 
+  /**
+   * Diálogo nativo de abrir. Devolve só nome, caminho e tamanho.
+   *
+   * Ler o conteúdo aqui era o que deixava a tela muda: com um arquivo de
+   * 400 MB, entre fechar o diálogo e o arquivo aparecer passavam dezenas de
+   * segundos sem nada na tela — e, se o arquivo passasse do limite, a recusa
+   * só vinha depois de toda essa espera. Agora a interface recebe a lista na
+   * hora, valida, mostra, e só então pede o conteúdo.
+   */
   ipcMain.handle('arquivo:escolher', async (_evento, { extensoes }) => {
     const lista = Array.isArray(extensoes) && extensoes.length ? extensoes : ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'docx', 'txt'];
     const escolha = await dialog.showOpenDialog(janela, {
@@ -450,16 +459,53 @@ function registrarCanais() {
     const resultado = [];
     for (const caminho of escolha.filePaths) {
       try {
-        const conteudo = await fsp.readFile(caminho);
-        resultado.push({
-          nome: path.basename(caminho),
-          bytes: conteudo.buffer.slice(conteudo.byteOffset, conteudo.byteOffset + conteudo.byteLength),
-        });
+        const info = await fsp.stat(caminho);
+        resultado.push({ nome: path.basename(caminho), caminho, tamanho: info.size });
       } catch {
-        /* ignora o que não conseguimos ler */
+        /* sumiu entre escolher e olhar: ignoramos */
       }
     }
     return resultado;
+  });
+
+  /**
+   * Lê um arquivo já escolhido, avisando o quanto já leu.
+   *
+   * Em pedaços, e não de uma vez, para a barra andar de verdade: um readFile
+   * de 400 MB fica mudo até terminar.
+   */
+  ipcMain.handle('arquivo:ler', async (evento, { caminho }) => {
+    if (typeof caminho !== 'string' || !fs.existsSync(caminho)) {
+      return { ok: false, erro: 'Arquivo não encontrado.' };
+    }
+
+    try {
+      const info = await fsp.stat(caminho);
+      const pedacos = [];
+      let lidos = 0;
+      let ultimoAviso = 0;
+
+      for await (const pedaco of fs.createReadStream(caminho, { highWaterMark: 4 * 1024 * 1024 })) {
+        pedacos.push(pedaco);
+        lidos += pedaco.length;
+
+        // Um aviso a cada 2%: mais que isso só enche a fila de mensagens.
+        const agora = Math.floor((lidos / info.size) * 50);
+        if (agora !== ultimoAviso) {
+          ultimoAviso = agora;
+          evento.sender.send('arquivo:lendo', { caminho, lidos, total: info.size });
+        }
+      }
+
+      const conteudo = Buffer.concat(pedacos);
+      return {
+        ok: true,
+        nome: path.basename(caminho),
+        bytes: conteudo.buffer.slice(conteudo.byteOffset, conteudo.byteOffset + conteudo.byteLength),
+      };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
   });
 
   ipcMain.handle('arquivo:revelar', (_evento, { caminho }) => {
