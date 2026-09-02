@@ -2,7 +2,16 @@
 
 /** Deixar o arquivo menor, mais leve ou legível de novo. */
 
-import { canvasToBlob, copy, openWithPdfJs, openWithPdfLib, renderPageToCanvas, respirar, salvarPdf } from '../nucleo';
+import {
+  canvasToBlob,
+  copy,
+  openWithPdfJs,
+  openWithPdfLib,
+  renderPageToCanvas,
+  respirar,
+  salvarPdf,
+  senhaDaFila,
+} from '../nucleo';
 import { type OutputFile, type RunContext, type RunResult } from '../tipos';
 import { suffixName } from '../../utils';
 import { loadPdfLib } from '../lazy';
@@ -92,6 +101,34 @@ export async function compress(ctx: RunContext): Promise<RunResult> {
   }
 
   ctx.onProgress(1);
+  // Comprimir vários e receber vários arquivos separados obriga a juntar
+  // depois, numa segunda passada. Com a opção ligada sai um documento só, na
+  // ordem da fila.
+  const juntar = ctx.options.juntar === true || ctx.options.juntar === 'true';
+  if (juntar && outputs.length > 1) {
+    ctx.onProgress(0.95, 'Juntando num arquivo só');
+    const unido = await PDFDocument.create();
+    let paginas = 0;
+
+    for (const arquivo of outputs) {
+      const parte = await PDFDocument.load(await arquivo.blob.arrayBuffer());
+      const indices = parte.getPageIndices();
+      for (const pagina of await unido.copyPages(parte, indices)) unido.addPage(pagina);
+      paginas += indices.length;
+      await respirar(ctx);
+    }
+
+    const blob = await salvarPdf(unido, senhaDaFila(ctx.files));
+    ctx.onProgress(1);
+    return {
+      files: [{ name: suffixName(ctx.files[0].name, 'comprimido-unido'), blob, pages: paginas }],
+      inputBytes,
+      outputBytes: blob.size,
+      notes: [...notes, `${outputs.length} arquivos comprimidos e unidos em ${paginas} páginas.`],
+      highlightSavings: true,
+    };
+  }
+
   return { files: outputs, inputBytes, outputBytes, notes, highlightSavings: true };
 }
 
