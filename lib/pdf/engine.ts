@@ -190,10 +190,11 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
   };
 
   const nomeMinusculo = base.name.toLowerCase();
-  const ehDocxPeloNome = nomeMinusculo.endsWith('.docx');
+  // .docx, .xlsx e .pptx sao o mesmo pacote zip de XML por dentro.
+  const ehOfficePeloNome = /\.(docx|xlsx|pptx)$/.test(nomeMinusculo);
   const ehTxtPeloNome = nomeMinusculo.endsWith('.txt');
 
-  if (!base.type.startsWith('image/') && !nomeMinusculo.endsWith('.pdf') && !ehDocxPeloNome && !ehTxtPeloNome) {
+  if (!base.type.startsWith('image/') && !nomeMinusculo.endsWith('.pdf') && !ehOfficePeloNome && !ehTxtPeloNome) {
     return { ...base, error: 'Formato não suportado.' };
   }
 
@@ -209,9 +210,9 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
     return { ...base, pageCount: 1, thumbnail: await imageThumbnail(file) };
   }
 
-  if (ehDocxPeloNome) {
+  if (ehOfficePeloNome) {
     if (!pareceMesmoDocx(bytes)) {
-      return { ...base, error: 'Este arquivo tem extensão .docx mas o conteúdo não é um documento Word válido.' };
+      return { ...base, error: `Este arquivo tem extensão ${base.name.split('.').pop()} mas o conteúdo não é um documento do Office válido.` };
     }
     return { ...base, pageCount: null };
   }
@@ -1665,6 +1666,192 @@ async function wordToPdf(ctx: RunContext): Promise<RunResult> {
   return { files: outputs, inputBytes, outputBytes, notes };
 }
 
+
+/**
+ * Lê uma planilha .xlsx.
+ *
+ * O texto das células não fica na planilha: os valores de texto vão todos para
+ * sharedStrings.xml e a célula guarda só o índice (t="s"). Número, data e
+ * fórmula ficam no próprio <v>, já calculados pelo Excel.
+ */
+async function lerPlanilha(bytes: ArrayBuffer): Promise<{ nome: string; linhas: string[][] }[]> {
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(bytes);
+
+  const workbook = await zip.file('xl/workbook.xml')?.async('string');
+  if (!workbook) {
+    throw new Error('Não encontramos xl/workbook.xml: o arquivo não parece ser um .xlsx válido.');
+  }
+
+  const compartilhadas: string[] = [];
+  const sharedXml = await zip.file('xl/sharedStrings.xml')?.async('string');
+  if (sharedXml) {
+    for (const item of sharedXml.match(/<si\b[^>]*>[\s\S]*?<\/si>/g) ?? []) {
+      // Uma célula com formatação vira vários <t>; juntamos todos.
+      const pedacos = [...item.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((m) => decodificarEntidadesXml(m[1]));
+      compartilhadas.push(pedacos.join(''));
+    }
+  }
+
+  const nomes = [...workbook.matchAll(/<sheet\b[^>]*name="([^"]*)"[^>]*\/?>/g)].map((m) =>
+    decodificarEntidadesXml(m[1]),
+  );
+
+  const planilhas: { nome: string; linhas: string[][] }[] = [];
+  for (let i = 0; i < nomes.length; i += 1) {
+    const folha = await zip.file(`xl/worksheets/sheet${i + 1}.xml`)?.async('string');
+    if (!folha) continue;
+
+    const linhas: string[][] = [];
+    for (const linhaXml of folha.match(/<row\b[^>]*>[\s\S]*?<\/row>/g) ?? []) {
+      const celulas: string[] = [];
+      for (const celula of linhaXml.match(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g) ?? []) {
+        // A referência (A1, B1...) diz a coluna: sem isso, uma célula vazia no
+        // meio da linha desloca todo o resto para a esquerda.
+        const coluna = celula.match(/r="([A-Z]+)\d+"/)?.[1];
+        const indice = coluna
+          ? [...coluna].reduce((soma, letra) => soma * 26 + (letra.charCodeAt(0) - 64), 0) - 1
+          : celulas.length;
+
+        const tipo = celula.match(/\bt="([^"]*)"/)?.[1];
+        let valor = '';
+        if (tipo === 'inlineStr') {
+          valor = [...celula.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+            .map((m) => decodificarEntidadesXml(m[1]))
+            .join('');
+        } else {
+          const bruto = celula.match(/<v\b[^>]*>([\s\S]*?)<\/v>/)?.[1];
+          if (bruto !== undefined) {
+            valor = tipo === 's' ? (compartilhadas[Number(bruto)] ?? '') : decodificarEntidadesXml(bruto);
+          }
+        }
+
+        while (celulas.length < indice) celulas.push('');
+        celulas[indice] = valor;
+      }
+      linhas.push(celulas);
+    }
+    planilhas.push({ nome: nomes[i], linhas });
+  }
+  return planilhas;
+}
+
+/**
+ * Planilha para PDF: cada aba vira uma seção, com as colunas em largura fixa.
+ * Fórmula entra com o resultado que o Excel gravou; gráfico, imagem, cor e
+ * célula mesclada não atravessam.
+ */
+async function excelToPdf(ctx: RunContext): Promise<RunResult> {
+  const outputs: OutputFile[] = [];
+  let inputBytes = 0;
+  let outputBytes = 0;
+  const notes: string[] = [
+    'Só o conteúdo das células atravessa. Gráficos, imagens, cores e células mescladas não são preservados.',
+    'Fórmula entra com o último resultado que o Excel gravou no arquivo, porque nada é recalculado aqui.',
+  ];
+
+  for (let f = 0; f < ctx.files.length; f += 1) {
+    const source = ctx.files[f];
+    inputBytes += source.size;
+    ctx.onProgress(f / ctx.files.length, `Lendo ${source.name}`);
+
+    const planilhas = await lerPlanilha(source.bytes);
+    const paragrafos: ParagrafoDocx[] = [];
+    let algumaCelula = false;
+
+    for (const planilha of planilhas) {
+      if (planilhas.length > 1) {
+        paragrafos.push({ runs: [{ texto: planilha.nome, negrito: true }] });
+        paragrafos.push({ runs: [] });
+      }
+      for (const linha of planilha.linhas) {
+        if (linha.some((celula) => celula.trim())) algumaCelula = true;
+        // Largura fixa por coluna mantém a leitura em tabela sem desenhar
+        // grade; o corte evita que uma célula longa empurre o resto da linha.
+        paragrafos.push({
+          runs: [{ texto: linha.map((celula) => celula.slice(0, 28).padEnd(18)).join(' '), negrito: false }],
+        });
+      }
+      paragrafos.push({ runs: [] });
+    }
+
+    const { doc } = await pdfDeParagrafos(paragrafos, 8);
+    await respirar(ctx);
+    const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+    outputBytes += blob.size;
+    outputs.push({ name: replaceExtension(source.name, 'pdf'), blob, pages: doc.getPageCount() });
+
+    if (!algumaCelula) notes.push(`${source.name}: não encontramos células preenchidas.`);
+  }
+
+  ctx.onProgress(1);
+  return { files: outputs, inputBytes, outputBytes, notes };
+}
+
+/**
+ * Apresentação para PDF: uma seção por slide, com o texto na ordem em que
+ * aparece no XML. Cada <a:p> é um parágrafo dentro de uma caixa de texto.
+ */
+async function powerpointToPdf(ctx: RunContext): Promise<RunResult> {
+  const JSZip = (await import('jszip')).default;
+  const outputs: OutputFile[] = [];
+  let inputBytes = 0;
+  let outputBytes = 0;
+  const notes: string[] = [
+    'Sai o texto dos slides. Layout, imagens, cores, animações e notas do apresentador ficam de fora.',
+  ];
+
+  for (let f = 0; f < ctx.files.length; f += 1) {
+    const source = ctx.files[f];
+    inputBytes += source.size;
+    ctx.onProgress(f / ctx.files.length, `Lendo ${source.name}`);
+
+    const zip = await JSZip.loadAsync(source.bytes);
+    // slide2 antes de slide10: ordenação numérica, não alfabética.
+    const arquivos = Object.keys(zip.files)
+      .filter((nome) => /^ppt\/slides\/slide\d+\.xml$/.test(nome))
+      .sort((a, b) => Number(a.match(/(\d+)/)![1]) - Number(b.match(/(\d+)/)![1]));
+
+    if (!arquivos.length) {
+      throw new Error('Não encontramos slides dentro do arquivo: ele não parece ser um .pptx válido.');
+    }
+
+    const paragrafos: ParagrafoDocx[] = [];
+    let algumTexto = false;
+
+    for (let s = 0; s < arquivos.length; s += 1) {
+      const xml = await zip.file(arquivos[s])!.async('string');
+      paragrafos.push({ runs: [{ texto: `Slide ${s + 1}`, negrito: true }] });
+
+      for (const bloco of xml.match(/<a:p\b[^>]*>[\s\S]*?<\/a:p>/g) ?? []) {
+        const texto = [...bloco.matchAll(/<a:t\b[^>]*>([\s\S]*?)<\/a:t>/g)]
+          .map((m) => decodificarEntidadesXml(m[1]))
+          .join('');
+        if (!texto.trim()) continue;
+        algumTexto = true;
+        paragrafos.push({ runs: [{ texto, negrito: false }] });
+      }
+
+      paragrafos.push({ runs: [] });
+      await respirar(ctx);
+    }
+
+    const { doc } = await pdfDeParagrafos(paragrafos, 11);
+    const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
+    outputBytes += blob.size;
+    outputs.push({ name: replaceExtension(source.name, 'pdf'), blob, pages: doc.getPageCount() });
+
+    notes.push(
+      algumTexto
+        ? `${source.name}: ${arquivos.length} slide(s) lidos.`
+        : `${source.name}: os slides não têm texto, só imagens.`,
+    );
+  }
+
+  ctx.onProgress(1);
+  return { files: outputs, inputBytes, outputBytes, notes };
+}
+
 /** Cada linha do .txt vira um parágrafo; o resto é o mesmo do .docx. */
 async function textToPdf(ctx: RunContext): Promise<RunResult> {
   const tamanhoFonte = Math.max(7, Math.min(18, Number(ctx.options.size ?? 11)));
@@ -2427,6 +2614,8 @@ export const OPERATIONS = {
   booklet,
   'odd-even': oddEven,
   'blank-pages': blankPages,
+  'excel-to-pdf': excelToPdf,
+  'powerpoint-to-pdf': powerpointToPdf,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;

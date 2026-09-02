@@ -52,7 +52,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             "font-src 'self' data:",
             "worker-src 'self' blob:",
             "connect-src 'self' blob: data:",
-            "frame-src 'none'",
+            // blob: é o PDF que a própria página acabou de gerar, posto num
+            // iframe escondido só para chamar a impressão. Nada externo entra.
+            "frame-src blob:",
             "manifest-src 'self'",
             "media-src 'self' blob:",
             "object-src 'none'",

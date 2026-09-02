@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Download, HardDrive, Info, RotateCcw, Save, Timer, Trash2 } from 'lucide-react';
+import { CheckCircle2, Download, HardDrive, Info, Printer, RotateCcw, Save, Timer, Trash2 } from 'lucide-react';
+import { PrintDialog } from './PrintDialog';
 import { vault } from '@/lib/ephemeral';
 import { zipFiles, type RunResult } from '@/lib/pdf/engine';
 import { cx, formatBytes, formatDuration } from '@/lib/utils';
-import { estaNoAplicativo, revelarNoExplorador, salvarArquivo, salvarVarios } from '@/lib/desktop';
+import { estaNoAplicativo, imprimirArquivo, revelarNoExplorador, salvarArquivo, salvarVarios, type OpcoesImpressao } from '@/lib/desktop';
 
 export function ResultPanel({
   entryId,
@@ -30,6 +31,7 @@ export function ResultPanel({
   const [salvoEm, setSalvoEm] = useState<string | null>(null);
   const [bulkDownloaded, setBulkDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imprimindo, setImprimindo] = useState<string | null>(null);
 
   useEffect(() => vault.subscribe(() => force((n) => n + 1)), []);
 
@@ -74,6 +76,18 @@ export function ResultPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Falha ao baixar.');
     }
+  }
+
+  /**
+   * Imprimir trata o resultado como leitura: o arquivo continua na memória,
+   * com o mesmo prazo, e ainda dá para salvar ou imprimir de novo.
+   */
+  async function imprimir(nome: string, opcoes?: OpcoesImpressao) {
+    const arquivo = entry?.files.find((f) => f.name === nome);
+    if (!arquivo) return;
+    setError(null);
+    const r = await imprimirArquivo(arquivo.name, arquivo.blob, opcoes);
+    if (!r.ok && !r.cancelado) setError(r.erro ?? 'Não foi possível imprimir.');
   }
 
   /** No aplicativo: diálogo nativo de salvar, arquivo direto no disco. */
@@ -170,6 +184,17 @@ export function ResultPanel({
                   {file.pages ? ` · ${file.pages} página${file.pages > 1 ? 's' : ''}` : ''}
                 </p>
               </div>
+              {file.name.toLowerCase().endsWith('.pdf') && (
+                <button
+                  type="button"
+                  onClick={() => (noApp ? setImprimindo(file.name) : void imprimir(file.name))}
+                  className="btn-ghost shrink-0 px-3 py-2"
+                  title="Abre o diálogo de impressão do sistema"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span className="hidden sm:inline">Imprimir</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => (noApp ? salvarUm(file.name) : downloadOne(file.name))}
@@ -262,6 +287,14 @@ export function ResultPanel({
           )}
         </p>
       </div>
+
+      {imprimindo && (
+        <PrintDialog
+          nomeArquivo={imprimindo}
+          onImprimir={(opcoes) => imprimir(imprimindo, opcoes)}
+          onFechar={() => setImprimindo(null)}
+        />
+      )}
     </div>
   );
 }
