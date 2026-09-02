@@ -19,6 +19,9 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { Dropzone } from './Dropzone';
+import { FilaDeArquivos } from './impressao/FilaDeArquivos';
+import { OpcoesDeImpressao } from './impressao/OpcoesDeImpressao';
+import { PreviaDaPagina } from './impressao/PreviaDaPagina';
 import { vault } from '@/lib/ephemeral';
 import { inspectFile, runOperation, type OperationId } from '@/lib/pdf/engine';
 import { loadPdfJs, loadPdfLib } from '@/lib/pdf/lazy';
@@ -565,410 +568,63 @@ export function PrintWorkspace() {
           <div className="space-y-4">
             {(() => {
               const saida = paraSaida(item);
-              return item?.blob ? (
-              <div className="card overflow-hidden">
-                <div className="flex items-center gap-2 border-b px-4 py-2">
-                  <p className="min-w-0 flex-1 truncate text-xs text-muted">Prévia · {item.nomeOriginal}</p>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setZoom(Math.max(0.25, escalaAtual - 0.25))}
-                      className="btn-ghost px-2 py-1"
-                      aria-label="Diminuir zoom"
-                    >
-                      <ZoomOut className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setZoom(0)}
-                      className={cx(
-                        'rounded-lg border px-2.5 py-1 text-[12px] font-medium tabular-nums transition',
-                        zoom === 0 ? 'border-transparent bg-ink text-bg' : 'text-muted hover:text-ink',
-                      )}
-                      title="Ajustar à largura"
-                    >
-                      {zoom === 0 ? 'Ajustado' : `${Math.round(zoom * 100)}%`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setZoom(Math.min(4, escalaAtual + 0.25))}
-                      className="btn-ghost px-2 py-1"
-                      aria-label="Aumentar zoom"
-                    >
-                      <ZoomIn className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-                <div ref={molduraRef} className="max-h-[70vh] overflow-auto bg-bg/40 p-4">
-                  <div className="relative mx-auto w-fit">
-                    <canvas ref={telaRef} className="block rounded-lg bg-white shadow-lg" />
-                    {renderizando && (
-                      <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">
-                        <Loader2 className="h-5 w-5 animate-spin text-brand" />
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {(saida?.paginas ?? 1) > 1 && (
-                  <div className="flex items-center justify-center gap-3 border-t px-4 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setPagina((p) => Math.max(1, p - 1))}
-                      disabled={pagina <= 1}
-                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
-                      aria-label="Página anterior"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <span className="text-sm tabular-nums text-muted">
-                      {pagina} de {saida?.paginas ?? 1}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPagina((p) => Math.min(saida?.paginas ?? 1, p + 1))}
-                      disabled={pagina >= (saida?.paginas ?? 1)}
-                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
-                      aria-label="Próxima página"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
+              return item?.blob && saida ? (
+                <PreviaDaPagina
+                  nome={item.nomeOriginal}
+                  paginas={saida.paginas}
+                  pagina={pagina}
+                  zoom={zoom}
+                  escalaAtual={escalaAtual}
+                  renderizando={renderizando}
+                  telaRef={telaRef}
+                  molduraRef={molduraRef}
+                  onZoom={setZoom}
+                  onPagina={setPagina}
+                />
               ) : null;
             })()}
-
-            <div className="card overflow-hidden">
-              <div className="flex items-center gap-3 border-b px-4 py-3">
-                <p className="flex-1 text-sm font-medium">
-                  Fila · {fila.length} arquivo{fila.length === 1 ? '' : 's'}
-                  {totalPaginas > 0 && <span className="text-muted"> · {totalPaginas} páginas</span>}
-                </p>
-                {preparando && (
-                  <span className="flex items-center gap-1.5 text-xs text-muted">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparando...
-                  </span>
-                )}
-              </div>
-
-              <ul className="divide-y">
-                {fila.map((linha) => (
-                  <li
-                    key={linha.id}
-                    className={cx(
-                      'flex items-center gap-3 px-4 py-2.5',
-                      linha.id === selecionado && 'bg-elevated/60',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => linha.blob && setSelecionado(linha.id)}
-                      disabled={!linha.blob}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left disabled:cursor-default"
-                    >
-                      <span className="shrink-0 text-muted">
-                        {linha.estado === 'convertendo' || imprimindo === linha.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-brand" />
-                        ) : linha.estado === 'impresso' ? (
-                          <Check className="h-4 w-4 text-brand" />
-                        ) : linha.estado === 'erro' ? (
-                          <AlertTriangle className="h-4 w-4 text-rose-500" />
-                        ) : (
-                          <FileText className="h-4 w-4" />
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{linha.nomeOriginal}</span>
-                        <span className="block truncate text-xs text-muted">
-                          {linha.estado === 'erro'
-                            ? linha.erro
-                            : linha.estado === 'convertendo'
-                              ? 'Convertendo...'
-                              : linha.estado === 'esperando'
-                                ? 'Na fila'
-                                : linha.estado === 'impresso'
-                                  ? 'Enviado para a impressora'
-                                  : `${formatBytes(linha.blob!.size)} · ${linha.paginas} página${linha.paginas === 1 ? '' : 's'}`}
-                        </span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => remover(linha.id)}
-                      className="shrink-0 text-muted transition hover:text-ink"
-                      aria-label={`Tirar ${linha.nomeOriginal} da fila`}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="border-t p-3">
-                <Dropzone
-                  accept={ACEITA}
-                  acceptLabel="PDF, imagem, Word, Excel ou texto"
-                  multiple
-                  compact
-                  onFiles={(arquivos) => {
-                    try {
-                      validarFila(arquivos, fila.map((i) => ({ size: i.origem.size })));
-                    } catch (e) {
-                      setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
-                      return;
-                    }
-                    adicionar(arquivos);
-                  }}
-                />
-              </div>
-            </div>
-
-          </div>
-
-          <div className="card h-fit p-5">
-            <p className="text-sm font-semibold tracking-tight">Opções</p>
-            <p className="mt-1 text-xs text-muted">Valem para todos os arquivos da fila.</p>
-
-            <div className="mt-4 space-y-3.5">
-              {noApp && (
-                <div>
-                  <label htmlFor="impressora" className="field-label">
-                    Impressora
-                  </label>
-                  {impressoras === null ? (
-                    <p className="mt-1.5 flex items-center gap-2 text-sm text-muted">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Procurando...
-                    </p>
-                  ) : impressoras.length === 0 ? (
-                    <p className="mt-1.5 text-sm text-muted">Nenhuma impressora instalada no Windows.</p>
-                  ) : (
-                    <select
-                      id="impressora"
-                      className={cx(campo, 'mt-1.5')}
-                      value={opcoes.impressora ?? ''}
-                      onChange={(e) => mudar('impressora', e.target.value)}
-                    >
-                      {impressoras.map((i) => (
-                        <option key={i.nome} value={i.nome}>
-                          {i.apelido}
-                          {i.padrao ? ' (padrão)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-
-                  {/*
-                    Tipo e espessura do papel não passam pela API do Windows:
-                    ficam no driver. Este botão leva direto à janela dele, e o
-                    que for marcado lá vale para o que enviarmos daqui.
-                  */}
-                  <button
-                    type="button"
-                    onClick={() => void abrirPreferenciasDaImpressora(opcoes.impressora ?? '')}
-                    disabled={!opcoes.impressora}
-                    className="btn-ghost mt-2 w-full justify-start px-3 py-2 text-[13px] disabled:opacity-40"
-                  >
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
-                    Tipo e espessura do papel...
-                  </button>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-                    Papel grosso, fotográfico ou etiqueta ficam na janela do driver. O que você marcar lá vale para as
-                    impressões feitas aqui.
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label htmlFor="porFolha" className="field-label">
-                  Páginas por folha
-                </label>
-                <select
-                  id="porFolha"
-                  className={cx(campo, 'mt-1.5')}
-                  value={String(porFolha)}
-                  onChange={(e) => setPorFolha(Number(e.target.value))}
-                >
-                  <option value="1">1 — uma por folha</option>
-                  <option value="2">2 — folha deitada</option>
-                  <option value="4">4 — grade 2 x 2</option>
-                  <option value="6">6 — grade 2 x 3</option>
-                  <option value="8">8 — grade 2 x 4</option>
-                  <option value="9">9 — grade 3 x 3</option>
-                  <option value="12">12 — grade 3 x 4</option>
-                  <option value="16">16 — grade 4 x 4</option>
-                </select>
-                {porFolha > 1 && (
-                  <p className="mt-1.5 text-[11px] text-muted">
-                    {montando ? 'Montando a prévia...' : 'A prévia acima já mostra as folhas montadas.'}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="lote" className="field-label">
-                  Enviar em lotes
-                </label>
-                <select
-                  id="lote"
-                  className={cx(campo, 'mt-1.5')}
-                  value={String(lote)}
-                  onChange={(e) => setLote(Number(e.target.value))}
-                >
-                  <option value="0">Arquivo inteiro de uma vez</option>
-                  <option value="1">Página por página</option>
-                  <option value="5">A cada 5 páginas</option>
-                  <option value="10">A cada 10 páginas</option>
-                  <option value="25">A cada 25 páginas</option>
-                  <option value="50">A cada 50 páginas</option>
-                </select>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-                  Documento grande num trabalho só costuma travar impressora de rede. Em lotes, cada parte só sai
-                  depois que a anterior entrou, e a ordem é mantida.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="papel" className="field-label">
-                  Papel
-                </label>
-                <select
-                  id="papel"
-                  className={cx(campo, 'mt-1.5')}
-                  value={opcoes.papel}
-                  onChange={(e) => mudar('papel', e.target.value as OpcoesImpressao['papel'])}
-                >
-                  <option value="A4">A4 · 210 × 297 mm</option>
-                  <option value="Letter">Carta · 216 × 279 mm</option>
-                  <option value="Legal">Ofício · 216 × 356 mm</option>
-                  <option value="A3">A3 · 297 × 420 mm</option>
-                  <option value="A5">A5 · 148 × 210 mm</option>
-                  <option value="Tabloid">Tabloide · 279 × 432 mm</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="qualidade" className="field-label">
-                  Qualidade
-                </label>
-                <select
-                  id="qualidade"
-                  className={cx(campo, 'mt-1.5')}
-                  value={String(opcoes.dpi)}
-                  onChange={(e) => mudar('dpi', Number(e.target.value))}
-                >
-                  <option value="150">Rascunho · 150 DPI</option>
-                  <option value="300">Normal · 300 DPI</option>
-                  <option value="600">Alta · 600 DPI</option>
-                  <option value="1200">Máxima · 1200 DPI</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="duplex" className="field-label">
-                  Frente e verso
-                </label>
-                <select
-                  id="duplex"
-                  className={cx(campo, 'mt-1.5')}
-                  value={opcoes.duplex}
-                  onChange={(e) => mudar('duplex', e.target.value as OpcoesImpressao['duplex'])}
-                >
-                  <option value="simplex">Só frente</option>
-                  <option value="longEdge">Virar na borda longa</option>
-                  <option value="shortEdge">Virar na borda curta</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="copias" className="field-label">
-                  Cópias de cada arquivo
-                </label>
-                <input
-                  id="copias"
-                  type="number"
-                  min={1}
-                  max={99}
-                  className={cx(campo, 'mt-1.5')}
-                  value={opcoes.copias}
-                  onChange={(e) => mudar('copias', Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {(
-                  [
-                    ['Colorido', true],
-                    ['Preto e branco', false],
-                  ] as const
-                ).map(([rotulo, valor]) => (
-                  <button
-                    key={rotulo}
-                    type="button"
-                    onClick={() => mudar('colorido', valor)}
-                    className={cx(
-                      'rounded-lg border px-3 py-1.5 text-[13px] font-medium transition',
-                      opcoes.colorido === valor ? 'border-transparent bg-ink text-bg' : 'text-muted hover:text-ink',
-                    )}
-                  >
-                    {rotulo}
-                  </button>
-                ))}
-                {(
-                  [
-                    ['Retrato', false],
-                    ['Paisagem', true],
-                  ] as const
-                ).map(([rotulo, valor]) => (
-                  <button
-                    key={rotulo}
-                    type="button"
-                    onClick={() => mudar('paisagem', valor)}
-                    className={cx(
-                      'rounded-lg border px-3 py-1.5 text-[13px] font-medium transition',
-                      Boolean(opcoes.paisagem) === valor
-                        ? 'border-transparent bg-ink text-bg'
-                        : 'text-muted hover:text-ink',
-                    )}
-                  >
-                    {rotulo}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void imprimirTudo()}
-              disabled={!prontos.length || Boolean(imprimindo) || preparando}
-              className="btn-primary mt-5 w-full py-3"
-            >
-              {imprimindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-              {imprimindo
-                ? 'Enviando...'
-                : prontos.length > 1
-                  ? `Imprimir os ${prontos.length}`
-                  : 'Imprimir'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setFila([]);
-                setAviso(null);
+            <FilaDeArquivos
+              fila={fila}
+              selecionado={selecionado}
+              imprimindo={imprimindo}
+              totalPaginas={totalPaginas}
+              preparando={preparando}
+              aceita={ACEITA}
+              onSelecionar={setSelecionado}
+              onRemover={remover}
+              onAdicionar={(arquivos) => {
+                try {
+                  validarFila(arquivos, fila.map((i) => ({ size: i.origem.size })));
+                } catch (e) {
+                  setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
+                  return;
+                }
+                adicionar(arquivos);
               }}
-              className="btn-ghost mt-2 w-full py-2 text-[13px]"
-            >
-              <Plus className="h-3.5 w-3.5 rotate-45" /> Limpar a fila
-            </button>
+            />
 
-            {aviso && <p className="mt-3 text-center text-xs text-brand">{aviso}</p>}
-
-            <p className="mt-4 text-xs leading-relaxed text-muted">
-              {noApp
-                ? 'Cada arquivo da fila vira um trabalho separado na impressora.'
-                : 'No navegador cada arquivo abre a caixa de impressão uma vez. No aplicativo a fila inteira vai de uma vez, sem perguntar.'}
-            </p>
           </div>
+
+          <OpcoesDeImpressao
+            opcoes={opcoes}
+            impressoras={impressoras}
+            noApp={noApp}
+            porFolha={porFolha}
+            montando={montando}
+            lote={lote}
+            prontos={prontos.length}
+            imprimindo={imprimindo}
+            preparando={preparando}
+            aviso={aviso}
+            onMudar={mudar}
+            onPorFolha={setPorFolha}
+            onLote={setLote}
+            onImprimir={() => void imprimirTudo()}
+            onLimpar={() => {
+              setFila([]);
+              setAviso(null);
+            }}
+          />
         </div>
       )}
     </div>
