@@ -15,7 +15,7 @@
  * aba em máquina fraca.
  */
 
-import { loadPdfJs } from './lazy';
+import { openWithPdfJs, renderPageToCanvas } from './nucleo';
 
 /**
  * Teto do desenho.
@@ -36,27 +36,21 @@ export async function prepararParaImpressao(
   enviarPagina: (indice: number, bytes: ArrayBuffer) => Promise<unknown>,
   onProgresso?: ProgressoImpressao,
 ): Promise<number> {
-  const pdfjs = await loadPdfJs();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
-  const escala = Math.min(Math.max(Number(dpi) || 300, 72), DPI_MAXIMO) / 72;
+  const doc = await openWithPdfJs(await blob.arrayBuffer());
+  const alvo = Math.min(Math.max(Number(dpi) || 300, 72), DPI_MAXIMO);
   const canvas = document.createElement('canvas');
 
   try {
     for (let i = 1; i <= doc.numPages; i += 1) {
       const pagina = await doc.getPage(i);
-      const viewport = pagina.getViewport({ scale: escala });
 
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      const contexto = canvas.getContext('2d');
-      if (!contexto) throw new Error('Não foi possível desenhar a página para imprimir.');
-
-      // O PDF não desenha fundo: sem pintar branco antes, a folha sai preta
-      // no canvas, que começa transparente e vira preto no JPEG.
-      contexto.fillStyle = '#ffffff';
-      contexto.fillRect(0, 0, canvas.width, canvas.height);
-
-      await pagina.render({ canvasContext: contexto, viewport }).promise;
+      // A mesma função que comprimir, tons de cinza e OCR usam. Desenhar aqui
+      // por conta própria custou uma versão travada: sem `intent: 'print'` o
+      // pdf.js agenda o desenho por quadro de animação, e numa janela que não
+      // está em primeiro plano esse agendamento não roda — a promessa do
+      // desenho nunca resolvia e a impressão ficava em "Enviando..." para
+      // sempre.
+      await renderPageToCanvas(pagina, alvo, canvas);
       pagina.cleanup();
 
       const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));

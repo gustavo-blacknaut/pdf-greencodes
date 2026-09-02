@@ -64,9 +64,38 @@ async function receberPagina({ id, indice, bytes }) {
   return { ok: true };
 }
 
-/** Uma folha por imagem, sem margem: o recorte já veio pronto do desenho. */
-function montarHtml(paginas, papel) {
+/**
+ * Como a página se encaixa na folha.
+ *
+ * Os nomes são os do CSS porque é literalmente isso que acontece: a página
+ * vira uma imagem dentro de uma caixa do tamanho do papel.
+ */
+const AJUSTES = {
+  // Cabe inteira, sem cortar nada. Pode sobrar branco nas beiradas.
+  pagina: 'contain',
+  // Ocupa a folha toda, cortando o que não couber.
+  preencher: 'cover',
+  // Tamanho original, sem redimensionar.
+  original: 'none',
+};
+
+/**
+ * Uma folha por imagem.
+ *
+ * A margem entra na regra @page e é descontada do tamanho da imagem: sem
+ * descontar, a imagem ocuparia a folha inteira e a margem não apareceria.
+ */
+function montarHtml(paginas, papel, opcoes = {}) {
   const [larguraMm, alturaMm] = PAPEL_MM[papel] || PAPEL_MM.A4;
+
+  const limitar = (valor) => Math.min(Math.max(Number(valor) || 0, 0), 40);
+  const lados = limitar(opcoes.margemLadosMm);
+  const cima = limitar(opcoes.margemCimaMm);
+  const encaixe = AJUSTES[opcoes.ajuste] || AJUSTES.pagina;
+
+  const larguraUtil = Math.max(10, larguraMm - lados * 2);
+  const alturaUtil = Math.max(10, alturaMm - cima * 2);
+
   const imagens = paginas
     .sort()
     .map((arquivo) => `<img src="file://${arquivo.split(path.sep).join('/')}" alt="">`)
@@ -75,13 +104,13 @@ function montarHtml(paginas, papel) {
   return `<!doctype html>
 <meta charset="utf-8">
 <style>
-  @page { size: ${larguraMm}mm ${alturaMm}mm; margin: 0; }
+  @page { size: ${larguraMm}mm ${alturaMm}mm; margin: ${cima}mm ${lados}mm; }
   html, body { margin: 0; padding: 0; background: #fff; }
   img {
     display: block;
-    width: ${larguraMm}mm;
-    height: ${alturaMm}mm;
-    object-fit: contain;
+    width: ${larguraUtil}mm;
+    height: ${alturaUtil}mm;
+    object-fit: ${encaixe};
     page-break-after: always;
     break-after: page;
   }
@@ -116,7 +145,7 @@ async function enviar({ id, opcoes }) {
   let janela = null;
 
   try {
-    await fsp.writeFile(html, montarHtml(sessao.paginas, config.papel), 'utf8');
+    await fsp.writeFile(html, montarHtml(sessao.paginas, config.papel, config), 'utf8');
 
     janela = new BrowserWindow({
       show: false,
@@ -128,9 +157,11 @@ async function enviar({ id, opcoes }) {
     const resultado = await new Promise((resolve) => {
       janela.webContents.print(
         {
-          // Só imprime calado quando a pessoa escolheu a impressora aqui.
-          // Sem isso, cai no diálogo do Windows.
-          silent: Boolean(config.impressora),
+          // Calado só quando há impressora escolhida e ninguém pediu o
+          // diálogo. O diálogo é o caminho garantido para os ajustes do
+          // driver — tipo de papel, padrão fino ou grosso, melhor qualidade —
+          // que a impressão silenciosa monta por conta própria e pode ignorar.
+          silent: Boolean(config.impressora) && !config.usarDialogo,
           deviceName: config.impressora || undefined,
           color: config.colorido !== false,
           copies: Math.max(1, Math.min(99, Number(config.copias) || 1)),
@@ -138,6 +169,8 @@ async function enviar({ id, opcoes }) {
           duplexMode: config.duplex || 'simplex',
           pageSize: config.papel || 'A4',
           dpi: { horizontal: Number(config.dpi) || 300, vertical: Number(config.dpi) || 300 },
+          // A margem já está no @page do HTML; deixar o Chromium somar a
+          // dele daria margem em cima de margem.
           margins: { marginType: 'none' },
           printBackground: true,
         },

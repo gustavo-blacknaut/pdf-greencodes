@@ -11,6 +11,7 @@ export function OpcoesDeImpressao({
   opcoes,
   impressoras,
   noApp,
+  intervalo,
   porFolha,
   montando,
   lote,
@@ -19,6 +20,7 @@ export function OpcoesDeImpressao({
   preparando,
   aviso,
   onMudar,
+  onIntervalo,
   onPorFolha,
   onLote,
   onImprimir,
@@ -27,6 +29,7 @@ export function OpcoesDeImpressao({
   opcoes: OpcoesImpressao;
   impressoras: Impressora[] | null;
   noApp: boolean;
+  intervalo: string;
   porFolha: number;
   montando: boolean;
   lote: number;
@@ -35,6 +38,7 @@ export function OpcoesDeImpressao({
   preparando: boolean;
   aviso: string | null;
   onMudar: <K extends keyof OpcoesImpressao>(chave: K, valor: OpcoesImpressao[K]) => void;
+  onIntervalo: (valor: string) => void;
   onPorFolha: (valor: number) => void;
   onLote: (valor: number) => void;
   onImprimir: () => void;
@@ -93,8 +97,43 @@ export function OpcoesDeImpressao({
             Papel grosso, fotográfico ou etiqueta ficam na janela do driver. O que você marcar lá vale para as
             impressões feitas aqui.
           </p>
+
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-xl border border-line bg-bg/40 p-3">
+          <input
+            type="checkbox"
+            checked={Boolean(opcoes.usarDialogo)}
+            onChange={(e) => onMudar('usarDialogo', e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-current"
+          />
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium">Escolher os ajustes na hora de imprimir</span>
+            <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">
+              Abre a janela de impressão do Windows, onde o botão Preferências dá acesso ao tipo de papel, ao padrão
+              fino ou grosso e à melhor qualidade de imagem. É o caminho garantido para esses ajustes: mandando
+              direto, o sistema monta a configuração por conta própria e pode ignorar o que está salvo no driver.
+            </span>
+          </span>
+        </label>
         </div>
       )}
+
+      <div>
+        <label htmlFor="intervalo" className="field-label">
+          Páginas
+        </label>
+        <input
+          id="intervalo"
+          type="text"
+          value={intervalo}
+          onChange={(e) => onIntervalo(e.target.value)}
+          placeholder="todas"
+          className={cx(campo, 'mt-1.5')}
+        />
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+          Em branco imprime tudo. Aceita <span className="font-mono">1-5</span>,{' '}
+          <span className="font-mono">2, 7, 9</span> ou <span className="font-mono">10-</span> para daí até o fim.
+        </p>
+      </div>
 
       <div>
         <label htmlFor="porFolha" className="field-label">
@@ -163,6 +202,69 @@ export function OpcoesDeImpressao({
           <option value="Tabloid">Tabloide · 279 × 432 mm</option>
         </select>
       </div>
+
+      <div>
+        <label htmlFor="ajuste" className="field-label">
+          Ajuste na folha
+        </label>
+        <select
+          id="ajuste"
+          className={cx(campo, 'mt-1.5')}
+          value={opcoes.ajuste ?? 'pagina'}
+          onChange={(e) => onMudar('ajuste', e.target.value as OpcoesImpressao['ajuste'])}
+        >
+          <option value="pagina">Ajustar à página — cabe inteira</option>
+          <option value="preencher">Preencher a folha — corta o que sobra</option>
+          <option value="original">Tamanho original — sem redimensionar</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="margemLados" className="field-label">
+            Borda nos lados
+          </label>
+          <div className="relative mt-1.5">
+            <input
+              id="margemLados"
+              type="number"
+              min={0}
+              max={40}
+              className={cx(campo, 'pr-10')}
+              value={opcoes.margemLadosMm ?? 0}
+              onChange={(e) => onMudar('margemLadosMm', Math.max(0, Math.min(40, Number(e.target.value) || 0)))}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">
+              mm
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="margemCima" className="field-label">
+            Em cima e embaixo
+          </label>
+          <div className="relative mt-1.5">
+            <input
+              id="margemCima"
+              type="number"
+              min={0}
+              max={40}
+              className={cx(campo, 'pr-10')}
+              value={opcoes.margemCimaMm ?? 0}
+              onChange={(e) => onMudar('margemCimaMm', Math.max(0, Math.min(40, Number(e.target.value) || 0)))}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">
+              mm
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-muted">
+        Zero imprime até a beirada. A impressora ainda tem a margem física dela, que não dá para vencer por
+        software — se cortar, aumente aqui.
+      </p>
 
       <div>
         <label htmlFor="qualidade" className="field-label">
