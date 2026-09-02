@@ -25,7 +25,10 @@ export type BoardMode = 'organize' | 'remove' | 'keep' | 'rotate';
 
 export type Tool = {
   slug: string;
-  operation: OperationId;
+  /** Nulo nas ferramentas que têm página própria, fora do fluxo genérico. */
+  operation: OperationId | null;
+  /** Caminho próprio, quando a ferramenta não é servida por /[slug]. */
+  rota?: string;
   name: string;
   tagline: string;
   description: string;
@@ -50,6 +53,37 @@ const PDF_ACCEPT = ['application/pdf', '.pdf'];
 const IMAGE_ACCEPT = ['image/jpeg', 'image/png', 'image/webp', '.jpg', '.jpeg', '.png', '.webp'];
 
 export const TOOLS: Tool[] = [
+  {
+    slug: 'imprimir',
+    operation: null,
+    rota: 'imprimir',
+    name: 'Imprimir',
+    tagline: 'Prévia e impressão de qualquer formato',
+    description:
+      'Solte um PDF, foto, Word, Excel, PowerPoint ou texto. O que não for PDF é convertido aqui mesmo. Você confere na prévia e manda para a impressora escolhendo papel, qualidade, cor e frente e verso.',
+    icon: 'Printer',
+    accent: '52 211 153',
+    category: 'Converter',
+    accept: [
+      'application/pdf',
+      '.pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.docx',
+      '.xlsx',
+      '.pptx',
+      '.txt',
+    ],
+    acceptLabel: 'PDF, imagem, Word, Excel, PowerPoint ou texto',
+    multiple: false,
+    cta: 'Imprimir',
+    fields: [],
+  },
   {
     slug: 'comprimir-pdf',
     operation: 'compress',
@@ -1104,6 +1138,11 @@ export const TOOLS: Tool[] = [
 ];
 
 export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Privacidade'] as const;
+
+/** Onde a ferramenta vive. A de impressão tem página própria. */
+export function rotaDaFerramenta(tool: Tool, base: '' | '/app' = ''): string {
+  return `${base}/${tool.rota ?? tool.slug}`;
+}
 
 export function getTool(slug: string): Tool | undefined {
   return TOOLS.find((tool) => tool.slug === slug);

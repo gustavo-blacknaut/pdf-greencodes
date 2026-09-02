@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Download, HardDrive, Info, Printer, RotateCcw, Save, Timer, Trash2 } from 'lucide-react';
-import { PrintDialog } from './PrintDialog';
+import { useRouter } from 'next/navigation';
+import { CheckCircle2, Download, ExternalLink, HardDrive, Info, Printer, RotateCcw, Timer, Trash2 } from 'lucide-react';
 import { vault } from '@/lib/ephemeral';
 import { zipFiles, type RunResult } from '@/lib/pdf/engine';
 import { cx, formatBytes, formatDuration } from '@/lib/utils';
-import { estaNoAplicativo, imprimirArquivo, revelarNoExplorador, salvarArquivo, salvarVarios, type OpcoesImpressao } from '@/lib/desktop';
+import { abrirNoSistema, estaNoAplicativo, revelarNoExplorador, salvarNumerado } from '@/lib/desktop';
 
 export function ResultPanel({
   entryId,
@@ -19,6 +19,7 @@ export function ResultPanel({
   elapsedMs: number;
   onReset: () => void;
 }) {
+  const router = useRouter();
   const [, force] = useState(0);
   const [remaining, setRemaining] = useState(() => {
     const entry = vault.get(entryId);
@@ -31,7 +32,6 @@ export function ResultPanel({
   const [salvoEm, setSalvoEm] = useState<string | null>(null);
   const [bulkDownloaded, setBulkDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [imprimindo, setImprimindo] = useState<string | null>(null);
 
   useEffect(() => vault.subscribe(() => force((n) => n + 1)), []);
 
@@ -79,33 +79,52 @@ export function ResultPanel({
   }
 
   /**
-   * Imprimir trata o resultado como leitura: o arquivo continua na memória,
-   * com o mesmo prazo, e ainda dá para salvar ou imprimir de novo.
+   * A impressão tem tela própria, com prévia e opções. Mandamos o id do cofre
+   * na URL em vez do arquivo: o blob continua só na memória desta aba.
    */
-  async function imprimir(nome: string, opcoes?: OpcoesImpressao) {
-    const arquivo = entry?.files.find((f) => f.name === nome);
-    if (!arquivo) return;
-    setError(null);
-    const r = await imprimirArquivo(arquivo.name, arquivo.blob, opcoes);
-    if (!r.ok && !r.cancelado) setError(r.erro ?? 'Não foi possível imprimir.');
+  function irParaImpressao(nome: string) {
+    const base = window.location.pathname.startsWith('/app') ? '/app/imprimir' : '/imprimir';
+    router.push(`${base}?fonte=${encodeURIComponent(entryId)}&arquivo=${encodeURIComponent(nome)}`);
   }
 
-  /** No aplicativo: diálogo nativo de salvar, arquivo direto no disco. */
-  async function salvarUm(fileName: string) {
+  /**
+   * Salva e abre, sem diálogo.
+   *
+   * O nome vira o primeiro número livre em Documentos/PDF.GreenCodes: 1.pdf,
+   * 2.pdf, 3.pdf. Quem processa vários documentos seguidos não quer decidir
+   * nome e pasta a cada um.
+   */
+  async function abrirUm(fileName: string) {
     setError(null);
     const arquivo = entry!.files.find((f) => f.name === fileName);
     if (!arquivo) return;
-    const r = await salvarArquivo(arquivo.name, arquivo.blob);
-    if (r.ok && r.caminho) setSalvoEm(r.caminho);
-    else if (r.erro) setError(r.erro);
+
+    const salvo = await salvarNumerado(arquivo.name, arquivo.blob);
+    if (!salvo.ok || !salvo.caminho) {
+      setError(salvo.erro ?? 'Não foi possível salvar o arquivo.');
+      return;
+    }
+    setSalvoEm(salvo.caminho);
+
+    const aberto = await abrirNoSistema(salvo.caminho);
+    if (!aberto.ok) setError(aberto.erro ?? null);
   }
 
+  /** Vários arquivos: cada um pega o próximo número livre da mesma pasta. */
   async function salvarTodos() {
     setError(null);
-    if (entry!.files.length === 1) return salvarUm(entry!.files[0].name);
-    const r = await salvarVarios(entry!.files.map((f) => ({ nome: f.name, blob: f.blob })));
-    if (r.ok && r.pasta) setSalvoEm(r.pasta);
-    else if (r.erro) setError(r.erro);
+    if (entry!.files.length === 1) return abrirUm(entry!.files[0].name);
+
+    let ultimo: string | null = null;
+    for (const arquivo of entry!.files) {
+      const r = await salvarNumerado(arquivo.name, arquivo.blob);
+      if (!r.ok || !r.caminho) {
+        setError(r.erro ?? 'Não foi possível salvar os arquivos.');
+        return;
+      }
+      ultimo = r.caminho;
+    }
+    if (ultimo) setSalvoEm(ultimo);
   }
 
   async function downloadAll() {
@@ -187,7 +206,7 @@ export function ResultPanel({
               {file.name.toLowerCase().endsWith('.pdf') && (
                 <button
                   type="button"
-                  onClick={() => (noApp ? setImprimindo(file.name) : void imprimir(file.name))}
+                  onClick={() => irParaImpressao(file.name)}
                   className="btn-ghost shrink-0 px-3 py-2"
                   title="Abre o diálogo de impressão do sistema"
                 >
@@ -197,13 +216,13 @@ export function ResultPanel({
               )}
               <button
                 type="button"
-                onClick={() => (noApp ? salvarUm(file.name) : downloadOne(file.name))}
+                onClick={() => (noApp ? abrirUm(file.name) : downloadOne(file.name))}
                 className={cx('btn-ghost shrink-0 px-3 py-2', !noApp && done && 'text-brand')}
                 title={!noApp && done ? 'Baixa outra cópia e apaga o arquivo da memória' : undefined}
               >
-                {noApp ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                {noApp ? <ExternalLink className="h-4 w-4" /> : <Download className="h-4 w-4" />}
                 <span className="hidden sm:inline">
-                  {noApp ? 'Salvar como...' : done ? 'Baixar de novo' : 'Baixar'}
+                  {noApp ? 'Abrir' : done ? 'Baixar de novo' : 'Baixar'}
                 </span>
               </button>
             </li>
@@ -224,7 +243,7 @@ export function ResultPanel({
 
       {salvoEm && (
         <div className="flex flex-wrap items-center gap-2 border-t bg-brand/5 px-5 py-3 text-xs text-brand">
-          <Save className="h-3.5 w-3.5 shrink-0" />
+          <HardDrive className="h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate">Salvo em {salvoEm}</span>
           <button
             type="button"
@@ -246,11 +265,11 @@ export function ResultPanel({
             disabled={zipping}
             className="btn-primary"
           >
-            {noApp ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+            {noApp ? <ExternalLink className="h-4 w-4" /> : <Download className="h-4 w-4" />}
             {noApp
               ? entry.files.length > 1
-                ? 'Salvar todos numa pasta'
-                : 'Salvar como...'
+                ? 'Salvar todos'
+                : 'Abrir'
               : entry.files.length > 1
                 ? zipping
                   ? 'Compactando...'
@@ -287,14 +306,6 @@ export function ResultPanel({
           )}
         </p>
       </div>
-
-      {imprimindo && (
-        <PrintDialog
-          nomeArquivo={imprimindo}
-          onImprimir={(opcoes) => imprimir(imprimindo, opcoes)}
-          onFechar={() => setImprimindo(null)}
-        />
-      )}
     </div>
   );
 }

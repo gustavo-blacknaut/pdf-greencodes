@@ -372,6 +372,45 @@ function registrarCanais() {
     }
   });
 
+  /**
+   * Salva sem perguntar nada, numa pasta fixa, com nome numérico.
+   *
+   * O diálogo de "salvar como" custa dois cliques e uma decisão de nome a
+   * cada arquivo. Quem processa dez documentos seguidos quer o resultado no
+   * disco e pronto. O número é o primeiro livre da pasta: 1.pdf, 2.pdf, e por
+   * aí. Nunca sobrescreve nada.
+   */
+  ipcMain.handle('arquivo:salvar-numerado', async (_evento, { nome, bytes }) => {
+    if (typeof nome !== 'string' || !(bytes instanceof ArrayBuffer)) {
+      return { ok: false, erro: 'Pedido inválido.' };
+    }
+
+    try {
+      const pasta = path.join(app.getPath('documents'), 'PDF.GreenCodes');
+      await fsp.mkdir(pasta, { recursive: true });
+
+      const extensao = path.extname(nome) || '.pdf';
+      const existentes = new Set(await fsp.readdir(pasta));
+      let numero = 1;
+      while (existentes.has(numero + extensao)) numero += 1;
+
+      const destino = path.join(pasta, numero + extensao);
+      await fsp.writeFile(destino, Buffer.from(bytes));
+      return { ok: true, caminho: destino };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
+  });
+
+  /** Abre o arquivo no programa padrão do Windows. */
+  ipcMain.handle('arquivo:abrir', async (_evento, { caminho }) => {
+    if (typeof caminho !== 'string' || !fs.existsSync(caminho)) {
+      return { ok: false, erro: 'Arquivo não encontrado.' };
+    }
+    const erro = await shell.openPath(caminho);
+    return erro ? { ok: false, erro } : { ok: true, caminho };
+  });
+
   ipcMain.handle('arquivo:salvar-varios', async (_evento, { arquivos }) => {
     if (!Array.isArray(arquivos) || !arquivos.length) return { ok: false, erro: 'Nada para salvar.' };
 

@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld('greenpdf', {
   /** Abre o diálogo nativo de salvar e grava o arquivo escolhido. */
   salvarArquivo: (nome, bytes) => ipcRenderer.invoke('arquivo:salvar', { nome, bytes }),
 
+  /** Grava direto em Documentos/PDF.GreenCodes com nome numérico. */
+  salvarNumerado: (nome, bytes) => ipcRenderer.invoke('arquivo:salvar-numerado', { nome, bytes }),
+
+  /** Abre o arquivo no programa padrão do sistema. */
+  abrir: (caminho) => ipcRenderer.invoke('arquivo:abrir', { caminho }),
+
   /** Escolhe uma pasta e grava vários arquivos de uma vez. */
   salvarVarios: (arquivos) => ipcRenderer.invoke('arquivo:salvar-varios', { arquivos }),
 
