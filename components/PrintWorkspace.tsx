@@ -22,6 +22,7 @@ import { Dropzone } from './Dropzone';
 import { FilaDeArquivos } from './impressao/FilaDeArquivos';
 import { OpcoesDeImpressao } from './impressao/OpcoesDeImpressao';
 import { PreviaDaPagina } from './impressao/PreviaDaPagina';
+import { atividade } from '@/lib/atividade';
 import { vault } from '@/lib/ephemeral';
 import { inspectFile, runOperation, type OperationId } from '@/lib/pdf/engine';
 import { loadPdfJs, loadPdfLib } from '@/lib/pdf/lazy';
@@ -210,6 +211,7 @@ export function PrintWorkspace() {
 
     void (async () => {
       atualizar({ estado: 'convertendo' });
+      const tarefaConv = atividade.abrir(`Preparar ${alvo.nomeOriginal}`, 'ferramenta');
       try {
         let pdf = alvo.origem;
         let nomeFinal = alvo.nomeOriginal;
@@ -237,8 +239,10 @@ export function PrintWorkspace() {
         await doc.destroy();
 
         atualizar({ estado: 'pronto', blob: pdf, paginas, nome: nomeFinal });
+        atividade.fechar(tarefaConv, 'concluida', `${paginas} página(s)`);
       } catch (e) {
         atualizar({ estado: 'erro', erro: e instanceof Error ? e.message : 'Não foi possível preparar o arquivo.' });
+        atividade.fechar(tarefaConv, 'erro', e instanceof Error ? e.message : undefined);
       } finally {
         convertendoRef.current = false;
         // Empurra o laço: o próximo "esperando" entra na rodada seguinte.
@@ -474,6 +478,12 @@ export function PrintWorkspace() {
 
     for (const alvo of prontos) {
       setImprimindo(alvo.id);
+      const tarefa = atividade.abrir(`Imprimir ${alvo.nomeOriginal}`, 'impressao');
+      atividade.registrar(
+        tarefa,
+        `${opcoes.impressora ?? 'impressora padrão'} · ${opcoes.papel} · ${opcoes.dpi} DPI · ${opcoes.colorido === false ? 'preto e branco' : 'colorido'}`,
+        0,
+      );
       const saida = paraSaida(alvo);
       if (!saida) continue;
 
@@ -482,10 +492,17 @@ export function PrintWorkspace() {
 
       for (let n = 0; n < partes.length; n += 1) {
         const nome = partes.length > 1 ? alvo.nome.replace(/.pdf$/i, `-parte${n + 1}.pdf`) : alvo.nome;
-        const r = await imprimirArquivo(nome, partes[n], opcoes);
+        const r = await imprimirArquivo(nome, partes[n], opcoes, (feitas, total) =>
+          atividade.registrar(
+            tarefa,
+            `Desenhando página ${feitas} de ${total}` + (partes.length > 1 ? ` (lote ${n + 1}/${partes.length})` : ''),
+            feitas / total,
+          ),
+        );
 
         if (r.cancelado) {
           cancelou = true;
+          atividade.fechar(tarefa, 'cancelada');
           break;
         }
         if (!r.ok) {
@@ -498,9 +515,11 @@ export function PrintWorkspace() {
       if (cancelou) break;
       if (falhou) {
         setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'erro', erro: falhou } : i)));
+        atividade.fechar(tarefa, 'erro', falhou);
       } else {
         enviados += 1;
         setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'impresso' } : i)));
+        atividade.fechar(tarefa, 'concluida', `${partes.length} trabalho(s) na impressora`);
       }
     }
 
@@ -520,7 +539,7 @@ export function PrintWorkspace() {
   const preparando = fila.some((i) => i.estado === 'esperando' || i.estado === 'convertendo');
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6">
+    <div className="mx-auto max-w-[1600px] px-4 pb-12 sm:px-6">
       <header className={cx('pb-6', noAppPelaRota ? 'pt-5' : 'pt-10')}>
         <Link href={raiz} className="inline-flex items-center gap-1.5 text-sm text-muted transition hover:text-ink">
           <ArrowLeft className="h-4 w-4" /> Ferramentas
@@ -564,7 +583,7 @@ export function PrintWorkspace() {
           />
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
             {(() => {
               const saida = paraSaida(item);

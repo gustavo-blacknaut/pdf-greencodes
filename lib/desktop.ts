@@ -21,7 +21,12 @@ type Ponte = {
   abrir: (caminho: string) => Promise<ResultadoSalvar>;
   escolherArquivos: (extensoes?: string[]) => Promise<ArquivoDoSistema[]>;
   revelar: (caminho: string) => Promise<boolean>;
-  imprimir: (nome: string, bytes: ArrayBuffer, opcoes?: OpcoesImpressao) => Promise<ResultadoSalvar>;
+  impressao: {
+    preparar: () => Promise<{ ok: boolean; id?: string; erro?: string }>;
+    pagina: (id: string, indice: number, bytes: ArrayBuffer) => Promise<{ ok: boolean; erro?: string }>;
+    enviar: (id: string, opcoes?: OpcoesImpressao) => Promise<ResultadoSalvar>;
+    descartar: (id: string) => Promise<{ ok: boolean }>;
+  };
   listarImpressoras: () => Promise<Impressora[]>;
   preferenciasDaImpressora: (impressora: string) => Promise<ResultadoSalvar>;
   aoAbrirDoSistema: (callback: (arquivos: ArquivoDoSistema[]) => void) => () => void;
@@ -107,18 +112,38 @@ export async function escolherArquivos(extensoes?: string[]): Promise<File[]> {
 /**
  * Manda o arquivo para a impressora.
  *
- * No aplicativo quem imprime é o processo principal, que abre o PDF numa
- * janela escondida e chama o diálogo do sistema. No site isso não existe: o
- * jeito é pôr o PDF num iframe escondido e pedir print() por ele, que é o que
- * o próprio leitor do navegador faria.
+ * No aplicativo as páginas são desenhadas uma a uma e enviadas ao processo
+ * principal, que monta e imprime — o porquê está em lib/pdf/impressao.ts.
+ *
+ * No site isso não existe: o jeito é pôr o PDF num iframe escondido e pedir
+ * print() por ele, que é o que o próprio leitor do navegador faria.
  */
 export async function imprimirArquivo(
   nome: string,
   blob: Blob,
   opcoes?: OpcoesImpressao,
+  onProgresso?: (feitas: number, total: number) => void,
 ): Promise<ResultadoSalvar> {
   const api = ponte();
-  if (api) return api.imprimir(nome, await blob.arrayBuffer(), opcoes);
+
+  if (api) {
+    const sessao = await api.impressao.preparar();
+    if (!sessao.ok || !sessao.id) return { ok: false, erro: sessao.erro ?? 'Não foi possível preparar a impressão.' };
+
+    try {
+      const { prepararParaImpressao } = await import('./pdf/impressao');
+      await prepararParaImpressao(
+        blob,
+        opcoes?.dpi ?? 300,
+        (indice, bytes) => api.impressao.pagina(sessao.id!, indice, bytes),
+        onProgresso,
+      );
+      return await api.impressao.enviar(sessao.id, opcoes);
+    } catch (erro) {
+      await api.impressao.descartar(sessao.id);
+      return { ok: false, erro: erro instanceof Error ? erro.message : 'Falha ao preparar a impressão.' };
+    }
+  }
 
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob);
