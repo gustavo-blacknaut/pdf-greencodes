@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CloudOff, UploadCloud } from 'lucide-react';
+import { CloudOff, FolderOpen, UploadCloud } from 'lucide-react';
 import { cx } from '@/lib/utils';
+import { escolherArquivos, estaNoAplicativo } from '@/lib/desktop';
 
 export function Dropzone({
   accept,
@@ -20,6 +21,22 @@ export function Dropzone({
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
+  const [noApp, setNoApp] = useState(false);
+
+  useEffect(() => setNoApp(estaNoAplicativo()), []);
+
+  /**
+   * No aplicativo o diálogo é o do Windows, que lembra a última pasta e
+   * mostra os locais do sistema. O seletor do navegador não faz isso.
+   */
+  async function abrir() {
+    if (!noApp) {
+      inputRef.current?.click();
+      return;
+    }
+    const escolhidos = await escolherArquivos(accept.filter((tipo) => tipo.startsWith('.')));
+    if (escolhidos.length) onFiles(multiple ? escolhidos : escolhidos.slice(0, 1));
+  }
 
   // Colar um arquivo (Ctrl+V) é o caminho mais rápido depois de um print.
   useEffect(() => {
@@ -93,7 +110,7 @@ export function Dropzone({
 
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => void abrir()}
         className="flex w-full flex-col items-center text-center focus:outline-none"
       >
         <span className="relative grid place-items-center">
@@ -115,6 +132,10 @@ export function Dropzone({
         <span className="mt-1 text-sm text-muted">
           ou <span className="font-medium text-brand">clique para escolher</span> · {acceptLabel}
           {multiple ? ' · vários de uma vez' : ''}
+        </span>
+
+        <span className="btn-ghost mt-5 px-4 py-2">
+          <FolderOpen className="h-4 w-4" /> Abrir arquivo{multiple ? 's' : ''}
         </span>
 
         {!compact && (

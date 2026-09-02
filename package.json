@@ -1,6 +1,6 @@
 {
   "name": "pdf-greencodes",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -47,10 +47,10 @@
     "files": [
       "electron/**/*",
       "out/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**/*"
     ],
     "win": {
-      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
@@ -59,7 +59,7 @@
           ]
         }
       ],
-      "icon": "electron/icone.png"
+      "icon": "electron/icone.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -68,7 +68,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "PDF.GreenCodes",
-      "deleteAppDataOnUninstall": true
+      "deleteAppDataOnUninstall": true,
+      "installerIcon": "electron/icone.ico",
+      "uninstallerIcon": "electron/icone.ico",
+      "installerHeaderIcon": "electron/icone.ico"
     },
     "fileAssociations": [
       {

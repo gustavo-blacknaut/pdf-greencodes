@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('greenpdf', {
   /** Diálogo nativo de abrir. Devolve nome e conteúdo de cada escolhido. */
   escolherArquivos: (extensoes) => ipcRenderer.invoke('arquivo:escolher', { extensoes }),
 
+  /** Manda o PDF para a fila de impressão, com o diálogo do sistema. */
+  /** Impressoras que o Windows enxerga: locais, de rede e virtuais. */
+  listarImpressoras: () => ipcRenderer.invoke('impressora:listar'),
+
+  imprimir: (nome, bytes, opcoes) => ipcRenderer.invoke('arquivo:imprimir', { nome, bytes, opcoes }),
+
   /** Mostra o arquivo salvo no Explorador. */
   revelar: (caminho) => ipcRenderer.invoke('arquivo:revelar', { caminho }),
 
