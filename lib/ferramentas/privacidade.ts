@@ -1,0 +1,103 @@
+import { type Tool, PDF_ACCEPT } from './tipos';
+
+/** Ferramentas da categoria "Privacidade". */
+export const PRIVACIDADE: Tool[] = [
+  {
+    slug: 'proteger-pdf',
+    operation: 'protect',
+    name: 'Proteger PDF',
+    tagline: 'Senha de abertura de verdade',
+    description:
+      'Criptografa o documento com AES. Sem a senha ninguém abre, nem nós. Você ainda escolhe se quem tiver a senha pode imprimir, copiar texto ou editar.',
+    icon: 'Lock',
+    accent: '4 120 87',
+    category: 'Privacidade',
+    accept: PDF_ACCEPT,
+    acceptLabel: 'PDF',
+    multiple: false,
+    cta: 'Proteger com senha',
+    fields: [
+      {
+        key: 'password',
+        type: 'password',
+        label: 'Senha de abertura',
+        default: '',
+        placeholder: 'mínimo 4 caracteres',
+        help: 'Digitada aqui, usada aqui. Ela não é enviada nem guardada em lugar nenhum.',
+      },
+      { key: 'printing', type: 'toggle', label: 'Permitir impressão', default: true },
+      { key: 'copying', type: 'toggle', label: 'Permitir copiar texto', default: true },
+      { key: 'modifying', type: 'toggle', label: 'Permitir edição e anotações', default: false },
+    ],
+  },
+  {
+    slug: 'desbloquear-pdf',
+    operation: 'unlock',
+    name: 'Desbloquear PDF',
+    tagline: 'Tire a senha e restrições de um arquivo',
+    description:
+      'Remove restrições de permissão/impressão automaticamente sem senha. Se o arquivo exige senha de abertura, informe-a para gravar uma cópia desbloqueada.',
+    icon: 'Unlock',
+    accent: '110 231 183',
+    category: 'Privacidade',
+    accept: PDF_ACCEPT,
+    acceptLabel: 'PDF',
+    multiple: false,
+    allowLocked: true,
+    cta: 'Remover senha',
+    fields: [
+      {
+        key: 'password',
+        type: 'password',
+        label: 'Senha do PDF (opcional)',
+        default: '',
+        placeholder: 'deixe em branco se não souber',
+        help: 'Removemos restrições de permissão sem senha. Se o PDF exigir senha de abertura, digite-a aqui.',
+      },
+    ],
+  },
+  {
+    slug: 'limpar-metadados',
+    operation: 'strip-metadata',
+    name: 'Limpar metadados',
+    tagline: 'Apague os rastros do arquivo',
+    description:
+      'Zera autor, título, produtor e datas de criação, que é o que costuma vazar nome, empresa e o software que gerou o documento.',
+    icon: 'Eraser',
+    accent: '74 222 128',
+    category: 'Privacidade',
+    accept: PDF_ACCEPT,
+    acceptLabel: 'PDF',
+    multiple: false,
+    cta: 'Limpar metadados',
+    fields: [],
+  },
+  {
+    slug: 'definir-metadados',
+    operation: 'set-metadata',
+    name: 'Definir metadados',
+    tagline: 'Escreva título, autor e assunto',
+    description:
+      'Grava os campos que os leitores e os sistemas de busca mostram no lugar do nome do arquivo. Campo deixado em branco é gravado vazio, apagando o que estava lá.',
+    icon: 'Tags',
+    accent: '52 211 153',
+    category: 'Privacidade',
+    accept: PDF_ACCEPT,
+    acceptLabel: 'PDF',
+    multiple: false,
+    cta: 'Gravar metadados',
+    fields: [
+      { key: 'title', type: 'text', label: 'Título', default: '', placeholder: 'Relatório anual' },
+      { key: 'author', type: 'text', label: 'Autor', default: '', placeholder: 'Nome ou empresa' },
+      { key: 'subject', type: 'text', label: 'Assunto', default: '', placeholder: 'Do que trata o documento' },
+      {
+        key: 'keywords',
+        type: 'text',
+        label: 'Palavras-chave',
+        default: '',
+        placeholder: 'contrato, 2026, financeiro',
+        help: 'Separadas por vírgula.',
+      },
+    ],
+  },
+];

@@ -1,6 +1,6 @@
 {
   "name": "pdf-greencodes",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "app:dev": "npm run build && electron .",
     "app:build": "npm run build && electron-builder --win --publish never",
-    "deploy": "git pull && npm ci && npm run build && pm2 restart pdf-greencodes"
+    "deploy": "git pull && npm ci && npm run build && pm2 restart pdf-greencodes",
+    "tamanho": "node scripts/verificar-tamanho.js",
+    "verificar": "npm run tamanho && npm run typecheck && npm run test"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",
