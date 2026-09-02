@@ -1027,51 +1027,114 @@ async function protect(ctx: RunContext): Promise<RunResult> {
   };
 }
 
+/**
+ * Remove a proteção de um PDF.
+ *
+ * Não existe um caminho que sirva para todo arquivo, então são três, do que
+ * preserva mais para o que preserva menos:
+ *
+ * 1. Copiar as páginas para um documento novo. Sai limpo, sem sobra nenhuma da
+ *    estrutura de criptografia.
+ * 2. Reserializar o documento como o pdf-lib o entendeu. `copyPages` precisa
+ *    percorrer e clonar o grafo inteiro de objetos e quebra quando algum ramo
+ *    não decifrou; salvar direto só reescreve o que já foi lido, e é o que
+ *    resolve boa parte dos arquivos que morriam com erro de tipo do pdf-lib.
+ * 3. Redesenhar as páginas como imagem, usando o pdf.js. É o único caminho
+ *    quando o pdf-lib entende a criptografia pela metade, e custa o texto:
+ *    o resultado vira imagem e deixa de ser pesquisável.
+ */
 async function unlock(ctx: RunContext): Promise<RunResult> {
   const source = ctx.files[0];
-  const password = String(ctx.options.password ?? '');
+  const senha = String(ctx.options.password ?? '') || source.senha || '';
 
-  let doc;
-  let unlockedWithoutPassword = false;
+  const finalizar = (blob: Blob, paginas: number, notes: string[]): RunResult => ({
+    files: [{ name: suffixName(source.name, 'desbloqueado'), blob, pages: paginas }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes,
+  });
 
-  if (!password) {
+  const semSenha = senha.length === 0;
+  const comoAbriu = semSenha
+    ? 'Não foi preciso digitar senha: o arquivo só tinha restrições de permissão.'
+    : 'Senha removida. O arquivo gerado abre sem pedir nada.';
+
+  let doc: PdfDoc | null = null;
+  let erroAoAbrir: unknown = null;
+  try {
+    doc = await openWithPdfLib(source.bytes, senha);
+  } catch (error) {
+    erroAoAbrir = error;
+  }
+
+  if (doc) {
+    const { PDFDocument } = await loadPdfLib();
+    const paginas = doc.getPageCount();
+
+    // 1. Documento novo, só com as páginas.
     try {
-      doc = await openWithPdfLib(source.bytes, source.senha);
-      unlockedWithoutPassword = true;
-    } catch (error) {
-      if (isPasswordError(error)) {
-        throw new Error('Este PDF exige senha de abertura para ser lido. Digite a senha no campo para continuar.');
-      }
-      throw error;
+      ctx.onProgress(0.4, 'Removendo a proteção');
+      const limpo = await PDFDocument.create();
+      const copiadas = await limpo.copyPages(doc, doc.getPageIndices());
+      copiadas.forEach((pagina) => limpo.addPage(pagina));
+      const blob = toPdfBlob(await limpo.save({ useObjectStreams: true }));
+      ctx.onProgress(1);
+      return finalizar(blob, limpo.getPageCount(), [comoAbriu]);
+    } catch {
+      /* grafo incompleto: tenta reescrever sem clonar */
     }
-  } else {
+
+    // 2. Reserializar o que o pdf-lib leu.
     try {
-      doc = await openWithPdfLib(source.bytes, password);
-    } catch (error) {
-      if (isPasswordError(error)) throw new Error('Senha incorreta para este arquivo.');
-      throw error;
+      ctx.onProgress(0.6, 'Reescrevendo o arquivo');
+      const blob = toPdfBlob(await doc.save({ useObjectStreams: false }));
+      ctx.onProgress(1);
+      return finalizar(blob, paginas, [
+        comoAbriu,
+        'Este arquivo não aceitou a reconstrução página a página, então foi reescrito inteiro. Confira se abriu como esperado.',
+      ]);
+    } catch {
+      /* nem reescrever deu: sobra o caminho pelo pdf.js */
     }
   }
 
-  ctx.onProgress(0.5, 'Removendo a proteção');
+  // 3. Redesenhar pelo pdf.js, que decifra formatos que o pdf-lib não cobre.
+  let docJs;
+  try {
+    docJs = await openWithPdfJs(source.bytes, senha || undefined);
+  } catch (error) {
+    if (isPasswordError(error) || (erroAoAbrir && isPasswordError(erroAoAbrir))) {
+      throw new Error(
+        semSenha
+          ? 'Este PDF exige a senha de abertura. Digite-a no campo acima para continuar.'
+          : 'Senha incorreta para este arquivo.',
+      );
+    }
+    throw new Error('Não foi possível ler este PDF: a criptografia dele não é reconhecida.');
+  }
+
   const { PDFDocument } = await loadPdfLib();
-  const cleanDoc = await PDFDocument.create();
-  const pages = await cleanDoc.copyPages(doc, doc.getPageIndices());
-  pages.forEach((page) => cleanDoc.addPage(page));
+  const out = await PDFDocument.create();
+  const canvas = document.createElement('canvas');
 
-  const blob = toPdfBlob(await cleanDoc.save({ useObjectStreams: true }));
+  for (let i = 1; i <= docJs.numPages; i += 1) {
+    ctx.onProgress((i - 1) / docJs.numPages, `Redesenhando a página ${i} de ${docJs.numPages}`);
+    const page = await docJs.getPage(i);
+    const { widthPt, heightPt } = await renderPageToCanvas(page, 150, canvas);
+    const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.9);
+    const embutida = await out.embedJpg(await jpeg.arrayBuffer());
+    out.addPage([widthPt, heightPt]).drawImage(embutida, { x: 0, y: 0, width: widthPt, height: heightPt });
+    page.cleanup();
+    await respirar(ctx);
+  }
+  await docJs.destroy();
+
+  const blob = toPdfBlob(await out.save({ useObjectStreams: true }));
   ctx.onProgress(1);
-
-  const noteMessage = unlockedWithoutPassword
-    ? 'Proteção de permissões/impressão removida com sucesso (sem necessidade de digitar senha).'
-    : 'Senha removida com sucesso. O arquivo gerado abre sem senha.';
-
-  return {
-    files: [{ name: suffixName(source.name, 'desbloqueado'), blob, pages: cleanDoc.getPageCount() }],
-    inputBytes: source.size,
-    outputBytes: blob.size,
-    notes: [noteMessage],
-  };
+  return finalizar(blob, out.getPageCount(), [
+    comoAbriu,
+    'A estrutura interna deste PDF não sobreviveu à remoção da proteção, então as páginas foram redesenhadas como imagem. O documento abre e imprime normalmente, mas o texto deixou de ser selecionável e pesquisável.',
+  ]);
 }
 
 async function crop(ctx: RunContext): Promise<RunResult> {

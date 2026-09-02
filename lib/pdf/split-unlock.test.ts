@@ -82,6 +82,6 @@ describe('dividir e desbloquear PDF', () => {
 
     const result = await runOperation('unlock', ctx);
     expect(result.files).toHaveLength(1);
-    expect(result.notes[0]).toContain('sem necessidade de digitar senha');
+    expect(result.notes[0]).toContain('Não foi preciso digitar senha');
   });
 });
