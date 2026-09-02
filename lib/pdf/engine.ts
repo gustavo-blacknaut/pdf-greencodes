@@ -92,19 +92,59 @@ function toPdfBlob(bytes: Uint8Array): Blob {
  *
  * Como nunca chamamos `encrypt()` ao salvar, o arquivo entregue sai sem senha.
  */
+/**
+ * Formas da mesma senha que valem tentar antes de dizer que está errada.
+ *
+ * Duas armadilhas reais, nenhuma delas adivinhação:
+ *
+ * - Espaço sobrando. Senha copiada de e-mail ou de PDF quase sempre traz um.
+ * - Acento em forma diferente. "coração" pode estar composto (NFC, o padrão
+ *   no Windows) ou decomposto (NFD, o padrão no macOS). São bytes distintos,
+ *   e o PDF guarda o hash de um só. Quem criou o arquivo num Mac e digita a
+ *   senha no Windows erra sem ter errado nada.
+ *
+ * São variações da senha que a pessoa informou, não tentativas de descobrir
+ * senha nenhuma.
+ */
+function variantesDeSenha(senha: string): string[] {
+  if (!senha) return [''];
+  const bases = [senha, senha.trim()];
+  const todas = bases.flatMap((base) => [base, base.normalize('NFC'), base.normalize('NFD')]);
+  return [...new Set(todas)];
+}
+
 async function openWithPdfLib(bytes: ArrayBuffer, password = '') {
   const { PDFDocument } = await loadPdfLib();
-  return PDFDocument.load(copy(bytes), { password, updateMetadata: false });
+  let ultimoErro: unknown = null;
+  for (const tentativa of variantesDeSenha(password)) {
+    try {
+      return await PDFDocument.load(copy(bytes), { password: tentativa, updateMetadata: false });
+    } catch (erro) {
+      ultimoErro = erro;
+    }
+  }
+  throw ultimoErro;
 }
 
 async function openWithPdfJs(bytes: ArrayBuffer, password?: string) {
   const pdfjs = await loadPdfJs();
-  return pdfjs.getDocument({
-    data: copy(bytes),
-    useSystemFonts: true,
-    isEvalSupported: false,
-    ...(password ? { password } : {}),
-  }).promise;
+  const abrir = (senha: string) =>
+    pdfjs.getDocument({
+      data: copy(bytes),
+      useSystemFonts: true,
+      isEvalSupported: false,
+      ...(senha ? { password: senha } : {}),
+    }).promise;
+
+  let ultimoErro: unknown = null;
+  for (const tentativa of variantesDeSenha(password ?? '')) {
+    try {
+      return await abrir(tentativa);
+    } catch (erro) {
+      ultimoErro = erro;
+    }
+  }
+  throw ultimoErro;
 }
 
 /**
