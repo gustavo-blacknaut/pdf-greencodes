@@ -23,6 +23,7 @@ type Ponte = {
   revelar: (caminho: string) => Promise<boolean>;
   imprimir: (nome: string, bytes: ArrayBuffer, opcoes?: OpcoesImpressao) => Promise<ResultadoSalvar>;
   listarImpressoras: () => Promise<Impressora[]>;
+  preferenciasDaImpressora: (impressora: string) => Promise<ResultadoSalvar>;
   aoAbrirDoSistema: (callback: (arquivos: ArquivoDoSistema[]) => void) => () => void;
   menuDeContexto: { consultar: () => Promise<boolean>; definir: (ligado: boolean) => Promise<boolean> };
   inicioAutomatico: { consultar: () => Promise<boolean>; definir: (ligado: boolean) => Promise<boolean> };
@@ -155,6 +156,20 @@ export async function imprimirArquivo(
 
     document.body.append(quadro);
   });
+}
+
+/**
+ * Abre as Preferências de Impressão do driver, no Windows.
+ *
+ * É o único lugar onde existe tipo e espessura de papel: isso fica no
+ * DEVMODE privado do driver e não passa pela API do sistema, que só entrega
+ * tamanho, cor e duplex. O que for marcado lá vira padrão da impressora e
+ * vale para o que a gente enviar depois.
+ */
+export async function abrirPreferenciasDaImpressora(impressora: string): Promise<ResultadoSalvar> {
+  const api = ponte();
+  if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
+  return api.preferenciasDaImpressora(impressora);
 }
 
 /** Lista as impressoras do sistema. Fora do aplicativo não há o que listar. */
