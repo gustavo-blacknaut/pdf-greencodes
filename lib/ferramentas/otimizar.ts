@@ -28,6 +28,13 @@ export const OTIMIZAR: Tool[] = [
           { value: 'maxima', label: 'Máxima', hint: '110 DPI · menor arquivo, a cor pode mudar' },
         ],
       },
+      {
+        key: 'juntar',
+        type: 'toggle',
+        label: 'Juntar tudo num arquivo só',
+        default: false,
+        help: 'Com vários arquivos na fila, sai um documento único na ordem em que estão, em vez de um arquivo para cada entrada.',
+      },
     ],
   },
   {

@@ -31,7 +31,7 @@ type Ponte = {
   impressao: {
     preparar: () => Promise<{ ok: boolean; id?: string; erro?: string }>;
     pagina: (id: string, indice: number, bytes: ArrayBuffer) => Promise<{ ok: boolean; erro?: string }>;
-    enviar: (id: string, opcoes?: OpcoesImpressao) => Promise<ResultadoSalvar>;
+    enviar: (id: string, opcoes?: OpcoesImpressao, nome?: string) => Promise<ResultadoSalvar>;
     descartar: (id: string) => Promise<{ ok: boolean }>;
   };
   listarImpressoras: () => Promise<Impressora[]>;
@@ -192,7 +192,7 @@ export async function imprimirArquivo(
         (indice, bytes) => api.impressao.pagina(sessao.id!, indice, bytes),
         onProgresso,
       );
-      return await api.impressao.enviar(sessao.id, opcoes);
+      return await api.impressao.enviar(sessao.id, opcoes, nome);
     } catch (erro) {
       await api.impressao.descartar(sessao.id);
       return { ok: false, erro: erro instanceof Error ? erro.message : 'Falha ao preparar a impressão.' };

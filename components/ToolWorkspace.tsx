@@ -8,6 +8,7 @@ import {
   ArrowDownAZ,
   ArrowLeft,
   ArrowUpZA,
+  Copy,
   FileText,
   GripVertical,
   Loader2,
@@ -285,6 +286,22 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       atuais.map((item) => (item.id === id ? { ...item, data: liberado, error: undefined } : item)),
     );
     setError(null);
+  }
+
+  /**
+   * Repete o arquivo na fila.
+   *
+   * Serve para juntar o mesmo documento duas vezes, imprimir duas cópias
+   * dele no meio de outros, ou comparar dois ajustes lado a lado. O conteúdo
+   * é o mesmo objeto: não custa memória nova.
+   */
+  function duplicarItem(id: string) {
+    setItems((atuais) => {
+      const posicao = atuais.findIndex((item) => item.id === id);
+      if (posicao < 0) return atuais;
+      const copia = { ...atuais[posicao], id: nextId() };
+      return [...atuais.slice(0, posicao + 1), copia, ...atuais.slice(posicao + 1)];
+    });
   }
 
   function removeItem(id: string) {
@@ -711,6 +728,17 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
                     </span>
                   )}
 
+                  {tool.multiple && !item.loading && item.data && (
+                    <button
+                      type="button"
+                      onClick={() => duplicarItem(item.id)}
+                      className="shrink-0 rounded-lg p-1.5 text-muted transition hover:text-ink"
+                      title="Repetir este arquivo na fila"
+                      aria-label={`Duplicar ${item.name}`}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeItem(item.id)}

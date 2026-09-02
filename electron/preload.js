@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld('greenpdf', {
   impressao: {
     preparar: () => ipcRenderer.invoke('impressao:preparar'),
     pagina: (id, indice, bytes) => ipcRenderer.invoke('impressao:pagina', { id, indice, bytes }),
-    enviar: (id, opcoes) => ipcRenderer.invoke('impressao:enviar', { id, opcoes }),
+    enviar: (id, opcoes, nome) => ipcRenderer.invoke('impressao:enviar', { id, opcoes, nome }),
     descartar: (id) => ipcRenderer.invoke('impressao:descartar', { id }),
   },
 
