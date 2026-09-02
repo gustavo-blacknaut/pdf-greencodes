@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const http = require('node:http');
+const os = require('node:os');
 
 const integracao = require('./integracao-windows');
 
@@ -423,6 +424,73 @@ function registrarCanais() {
   ipcMain.handle('arquivo:revelar', (_evento, { caminho }) => {
     if (typeof caminho === 'string' && fs.existsSync(caminho)) shell.showItemInFolder(caminho);
     return true;
+  });
+
+  /**
+   * Impressoras visiveis para o Windows: locais, de rede e as virtuais
+   * ('Microsoft Print to PDF' e afins). O nome tecnico e o que a impressao
+   * usa; o amigavel e o que a pessoa reconhece.
+   */
+  ipcMain.handle('impressora:listar', async () => {
+    if (!janela) return [];
+    const lista = await janela.webContents.getPrintersAsync();
+    return lista.map((impressora) => ({
+      nome: impressora.name,
+      apelido: impressora.displayName || impressora.name,
+      descricao: impressora.description || '',
+      padrao: Boolean(impressora.isDefault),
+    }));
+  });
+
+  /**
+   * Impressão: grava o PDF num arquivo temporário, abre numa janela escondida
+   * e manda para a fila. O Chromium já renderiza PDF, então não depende de
+   * leitor externo instalado na máquina.
+   */
+  ipcMain.handle('arquivo:imprimir', async (_evento, { nome, bytes, opcoes }) => {
+    if (typeof nome !== 'string' || !(bytes instanceof ArrayBuffer)) {
+      return { ok: false, erro: 'Pedido inválido.' };
+    }
+
+    const temporario = path.join(os.tmpdir(), `greencodes-${Date.now()}-${path.basename(nome)}`);
+    let janelaImpressao = null;
+    try {
+      await fsp.writeFile(temporario, Buffer.from(bytes));
+
+      janelaImpressao = new BrowserWindow({ show: false, webPreferences: { plugins: true, sandbox: true } });
+      await janelaImpressao.loadURL(`file://${temporario.split(String.fromCharCode(92)).join("/")}`);
+
+      const resultado = await new Promise((resolve) => {
+        // Com impressora escolhida no painel, imprimimos direto (silent). Sem
+        // ela, cai na caixa do Windows, que e o caminho do site.
+        const config = opcoes || {};
+        janelaImpressao.webContents.print(
+          {
+            silent: Boolean(config.impressora),
+            deviceName: config.impressora || undefined,
+            color: config.colorido !== false,
+            copies: Math.max(1, Math.min(99, Number(config.copias) || 1)),
+            landscape: Boolean(config.paisagem),
+            duplexMode: config.duplex || 'simplex',
+            pageSize: config.papel || 'A4',
+            dpi: { horizontal: Number(config.dpi) || 300, vertical: Number(config.dpi) || 300 },
+            printBackground: true,
+          },
+          (sucesso, motivo) => resolve({ sucesso, motivo }),
+        );
+      });
+
+      // Cancelar no diálogo do Windows não é erro: a pessoa desistiu.
+      if (!resultado.sucesso && resultado.motivo && resultado.motivo !== 'cancelled') {
+        return { ok: false, erro: resultado.motivo };
+      }
+      return { ok: true, cancelado: !resultado.sucesso };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    } finally {
+      if (janelaImpressao && !janelaImpressao.isDestroyed()) janelaImpressao.destroy();
+      fsp.rm(temporario, { force: true }).catch(() => {});
+    }
   });
 
   ipcMain.handle('integracao:consultar', () => integracao.consultar());

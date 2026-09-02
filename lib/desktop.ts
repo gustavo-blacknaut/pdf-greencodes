@@ -19,9 +19,30 @@ type Ponte = {
   salvarVarios: (arquivos: { nome: string; bytes: ArrayBuffer }[]) => Promise<ResultadoSalvarVarios>;
   escolherArquivos: (extensoes?: string[]) => Promise<ArquivoDoSistema[]>;
   revelar: (caminho: string) => Promise<boolean>;
+  imprimir: (nome: string, bytes: ArrayBuffer, opcoes?: OpcoesImpressao) => Promise<ResultadoSalvar>;
+  listarImpressoras: () => Promise<Impressora[]>;
   aoAbrirDoSistema: (callback: (arquivos: ArquivoDoSistema[]) => void) => () => void;
   menuDeContexto: { consultar: () => Promise<boolean>; definir: (ligado: boolean) => Promise<boolean> };
   inicioAutomatico: { consultar: () => Promise<boolean>; definir: (ligado: boolean) => Promise<boolean> };
+};
+
+export type Impressora = { nome: string; apelido: string; descricao: string; padrao: boolean };
+
+/**
+ * O que o Chromium aceita configurar sem abrir a caixa do Windows.
+ *
+ * Espessura e tipo de papel (comum, fotográfico, cartão) ficam de fora: essa
+ * escolha é do driver da impressora, não do sistema de impressão, e só existe
+ * dentro das Preferências do próprio fabricante.
+ */
+export type OpcoesImpressao = {
+  impressora?: string;
+  copias?: number;
+  colorido?: boolean;
+  paisagem?: boolean;
+  duplex?: 'simplex' | 'shortEdge' | 'longEdge';
+  papel?: 'A3' | 'A4' | 'A5' | 'Legal' | 'Letter' | 'Tabloid';
+  dpi?: number;
 };
 
 export type ResultadoSalvar = { ok: boolean; caminho?: string; cancelado?: boolean; erro?: string };
@@ -61,6 +82,65 @@ export async function escolherArquivos(extensoes?: string[]): Promise<File[]> {
   if (!api) return [];
   const escolhidos = await api.escolherArquivos(extensoes);
   return escolhidos.map((arquivo) => new File([arquivo.bytes], arquivo.nome));
+}
+
+/**
+ * Manda o arquivo para a impressora.
+ *
+ * No aplicativo quem imprime é o processo principal, que abre o PDF numa
+ * janela escondida e chama o diálogo do sistema. No site isso não existe: o
+ * jeito é pôr o PDF num iframe escondido e pedir print() por ele, que é o que
+ * o próprio leitor do navegador faria.
+ */
+export async function imprimirArquivo(
+  nome: string,
+  blob: Blob,
+  opcoes?: OpcoesImpressao,
+): Promise<ResultadoSalvar> {
+  const api = ponte();
+  if (api) return api.imprimir(nome, await blob.arrayBuffer(), opcoes);
+
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const quadro = document.createElement('iframe');
+    quadro.style.position = 'fixed';
+    quadro.style.right = '0';
+    quadro.style.bottom = '0';
+    quadro.style.width = '0';
+    quadro.style.height = '0';
+    quadro.style.border = '0';
+    quadro.src = url;
+
+    // Não dá para saber quando a pessoa fecha o diálogo, então limpamos por
+    // tempo: cedo demais cancela a impressão, tarde demais segura o blob.
+    const limpar = () => {
+      URL.revokeObjectURL(url);
+      quadro.remove();
+    };
+
+    quadro.onload = () => {
+      try {
+        quadro.contentWindow?.focus();
+        quadro.contentWindow?.print();
+        resolve({ ok: true });
+      } catch (erro) {
+        resolve({ ok: false, erro: erro instanceof Error ? erro.message : 'Falha ao imprimir.' });
+      }
+      window.setTimeout(limpar, 60_000);
+    };
+
+    quadro.onerror = () => {
+      limpar();
+      resolve({ ok: false, erro: 'Não foi possível abrir o arquivo para impressão.' });
+    };
+
+    document.body.append(quadro);
+  });
+}
+
+/** Lista as impressoras do sistema. Fora do aplicativo não há o que listar. */
+export async function listarImpressoras(): Promise<Impressora[]> {
+  return (await ponte()?.listarImpressoras()) ?? [];
 }
 
 export function revelarNoExplorador(caminho: string): void {

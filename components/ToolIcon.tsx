@@ -3,6 +3,8 @@
 import {
   ArrowUpDown,
   BookOpen,
+  Presentation,
+  Table,
   Columns2,
   SplitSquareHorizontal,
   Combine,
@@ -41,6 +43,8 @@ import {
 const ICONS: Record<string, LucideIcon> = {
   ArrowUpDown,
   BookOpen,
+  Presentation,
+  Table,
   Columns2,
   Combine,
   Contrast,

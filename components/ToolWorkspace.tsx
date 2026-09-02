@@ -103,18 +103,16 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       // "aceita PDF" como "só aceita PDF".
       const aceitaPdf = tool.accept.includes('.pdf');
       const aceitaImagem = tool.accept.some((tipo) => tipo.startsWith('image/'));
-      const aceitaDocx = tool.accept.includes('.docx');
+      const aceitaOffice = tool.accept.some((tipo) => ['.docx', '.xlsx', '.pptx'].includes(tipo));
       const aceitaTxt = tool.accept.includes('.txt');
       const accepted = incoming.filter((file) => {
         const name = file.name.toLowerCase();
         const ehPdf = name.endsWith('.pdf') || file.type === 'application/pdf';
         const ehImagem = /\.(jpe?g|png|webp)$/.test(name) || file.type.startsWith('image/');
-        const ehDocx =
-          name.endsWith('.docx') ||
-          file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        const ehOffice = /\.(docx|xlsx|pptx)$/.test(name);
         const ehTxt = name.endsWith('.txt');
         return (
-          (aceitaPdf && ehPdf) || (aceitaImagem && ehImagem) || (aceitaDocx && ehDocx) || (aceitaTxt && ehTxt)
+          (aceitaPdf && ehPdf) || (aceitaImagem && ehImagem) || (aceitaOffice && ehOffice) || (aceitaTxt && ehTxt)
         );
       });
 
