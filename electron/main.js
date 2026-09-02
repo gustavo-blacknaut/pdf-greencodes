@@ -9,6 +9,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 const integracao = require('./integracao-windows');
+const impressao = require('./impressao');
 
 /**
  * PDF.GreenCodes para desktop.
@@ -511,56 +512,14 @@ function registrarCanais() {
     }));
   });
 
-  /**
-   * Impressão: grava o PDF num arquivo temporário, abre numa janela escondida
-   * e manda para a fila. O Chromium já renderiza PDF, então não depende de
-   * leitor externo instalado na máquina.
+  /*
+   * Impressão: a interface desenha as páginas e manda uma a uma; o módulo
+   * de impressão junta e envia. O porquê desse caminho está lá dentro.
    */
-  ipcMain.handle('arquivo:imprimir', async (_evento, { nome, bytes, opcoes }) => {
-    if (typeof nome !== 'string' || !(bytes instanceof ArrayBuffer)) {
-      return { ok: false, erro: 'Pedido inválido.' };
-    }
-
-    const temporario = path.join(os.tmpdir(), `greencodes-${Date.now()}-${path.basename(nome)}`);
-    let janelaImpressao = null;
-    try {
-      await fsp.writeFile(temporario, Buffer.from(bytes));
-
-      janelaImpressao = new BrowserWindow({ show: false, webPreferences: { plugins: true, sandbox: true } });
-      await janelaImpressao.loadURL(`file://${temporario.split(String.fromCharCode(92)).join("/")}`);
-
-      const resultado = await new Promise((resolve) => {
-        // Com impressora escolhida no painel, imprimimos direto (silent). Sem
-        // ela, cai na caixa do Windows, que e o caminho do site.
-        const config = opcoes || {};
-        janelaImpressao.webContents.print(
-          {
-            silent: Boolean(config.impressora),
-            deviceName: config.impressora || undefined,
-            color: config.colorido !== false,
-            copies: Math.max(1, Math.min(99, Number(config.copias) || 1)),
-            landscape: Boolean(config.paisagem),
-            duplexMode: config.duplex || 'simplex',
-            pageSize: config.papel || 'A4',
-            dpi: { horizontal: Number(config.dpi) || 300, vertical: Number(config.dpi) || 300 },
-            printBackground: true,
-          },
-          (sucesso, motivo) => resolve({ sucesso, motivo }),
-        );
-      });
-
-      // Cancelar no diálogo do Windows não é erro: a pessoa desistiu.
-      if (!resultado.sucesso && resultado.motivo && resultado.motivo !== 'cancelled') {
-        return { ok: false, erro: resultado.motivo };
-      }
-      return { ok: true, cancelado: !resultado.sucesso };
-    } catch (erro) {
-      return { ok: false, erro: erro.message };
-    } finally {
-      if (janelaImpressao && !janelaImpressao.isDestroyed()) janelaImpressao.destroy();
-      fsp.rm(temporario, { force: true }).catch(() => {});
-    }
-  });
+  ipcMain.handle('impressao:preparar', () => impressao.preparar());
+  ipcMain.handle('impressao:pagina', (_evento, dados) => impressao.receberPagina(dados));
+  ipcMain.handle('impressao:enviar', (_evento, dados) => impressao.enviar(dados));
+  ipcMain.handle('impressao:descartar', (_evento, { id }) => impressao.descartar(id));
 
   ipcMain.handle('integracao:consultar', () => integracao.consultar());
   ipcMain.handle('integracao:definir', async (_evento, { ligado }) => {
@@ -643,6 +602,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => {
+    impressao.limparTudo();
     encerrando = true;
   });
 }

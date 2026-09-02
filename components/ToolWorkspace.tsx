@@ -22,8 +22,10 @@ import { Dropzone } from './Dropzone';
 import { OptionField } from './OptionField';
 import { PageBoard } from './PageBoard';
 import { PdfEditor } from './PdfEditor';
+import { RegistroDeProgresso, type LinhaDoRegistro } from './RegistroDeProgresso';
 import { ResultPanel } from './ResultPanel';
 import { ToolIcon } from './ToolIcon';
+import { atividade } from '@/lib/atividade';
 import { vault } from '@/lib/ephemeral';
 import {
   desbloquearArquivo,
@@ -70,6 +72,12 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineStatus>('cold');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  // O que está sendo feito, linha a linha. Barra parada não diz se está lento
+  // ou travado; o registro diz em que arquivo e em que página parou.
+  const [registro, setRegistro] = useState<LinhaDoRegistro[]>([]);
+  const [registroAberto, setRegistroAberto] = useState(false);
+  const inicioRef = useRef(0);
 
   // A mesma tela serve o site e o aplicativo. No app o cabeçalho é enxuto: a
   // navegação e os selos de confiança ficam de fora.
@@ -240,11 +248,17 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
     setResult(null);
     setPhase('running');
     setProgress({ fraction: 0, label: 'Preparando...' });
+    inicioRef.current = performance.now();
+    setRegistro([{ texto: `Lendo ${ready.length} arquivo(s), ${formatBytes(totalBytes)}`, em: performance.now() }]);
 
     // Um PDF construído para nunca terminar não pode prender a aba para sempre,
     // e o usuário precisa conseguir desistir a qualquer momento.
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // O painel da direita mostra isso, e o cancelar de lá é este mesmo.
+    const tarefa = atividade.abrir(tool.name, 'ferramenta', () => cancelar());
+    atividade.registrar(tarefa, `Lendo ${ready.length} arquivo(s), ${formatBytes(totalBytes)}`, 0);
     const limite = window.setTimeout(() => controller.abort(), LIMITES.tempoOperacaoMs);
 
     const startedAt = performance.now();
@@ -256,12 +270,23 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         files: ready.map((item) => item.data!),
         options,
         signal: controller.signal,
-        onProgress: (fraction, label) =>
-          setProgress({ fraction: Math.min(1, Math.max(0, fraction)), label: label ?? '' }),
+        onProgress: (fraction, label) => {
+          setProgress({ fraction: Math.min(1, Math.max(0, fraction)), label: label ?? '' });
+          atividade.registrar(tarefa, label ?? '', fraction);
+          if (!label) return;
+          setRegistro((atual) => {
+            // Repetir a mesma linha não informa nada e enche a lista.
+            if (atual[atual.length - 1]?.texto === label) return atual;
+            const proximo = [...atual, { texto: label, em: performance.now() }];
+            // Um documento de mil páginas geraria mil linhas: guardamos o fim.
+            return proximo.length > 400 ? proximo.slice(-400) : proximo;
+          });
+        },
       });
       const entry = vault.store(data.files);
       resultIdRef.current = entry.id;
       setResult({ id: entry.id, data, elapsed: performance.now() - startedAt });
+      atividade.fechar(tarefa, 'concluida', `${data.files.length} arquivo(s) gerado(s)`);
       setPhase('done');
     } catch (e) {
       const cancelado = e instanceof OperacaoCancelada || (e as Error)?.name === 'OperacaoCancelada';
@@ -274,6 +299,11 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           : e instanceof Error
             ? e.message
             : 'Algo deu errado ao processar o arquivo.',
+      );
+      atividade.fechar(
+        tarefa,
+        cancelado ? 'cancelada' : 'erro',
+        cancelado ? undefined : e instanceof Error ? e.message : undefined,
       );
       setPhase('idle');
     } finally {
@@ -325,6 +355,12 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
             <span className="truncate">{progress.label || 'Processando...'}</span>
             <span className="ml-auto tabular-nums">{Math.round(progress.fraction * 100)}%</span>
           </p>
+          <RegistroDeProgresso
+            linhas={registro}
+            aberto={registroAberto}
+            onAlternar={() => setRegistroAberto((v) => !v)}
+            inicio={inicioRef.current}
+          />
           <button type="button" onClick={cancelar} className="btn-ghost mt-3 w-full py-2 text-xs">
             <X className="h-3.5 w-3.5" /> Cancelar
           </button>
