@@ -34,11 +34,27 @@ export async function merge(ctx: RunContext): Promise<RunResult> {
       imagens += 1;
     } else {
       const doc = await openWithPdfLib(source.bytes, source.senha);
-      const pages = await out.copyPages(doc, doc.getPageIndices());
-      pages.forEach((page) => {
-        out.addPage(page);
-        if (fundoBranco) pintarFundoBranco(out, page);
-      });
+      const indices = doc.getPageIndices();
+
+      // Em lotes, e não de uma vez. Copiar as páginas de um PDF grande num
+      // copyPages só trava a thread por segundos: a tela congela e o botão de
+      // cancelar não chega a ser clicado. 25 é pequeno o bastante para o
+      // intervalo entre uma respirada e outra não ser sentido.
+      for (let inicio = 0; inicio < indices.length; inicio += 25) {
+        const lote = indices.slice(inicio, inicio + 25);
+        const paginas = await out.copyPages(doc, lote);
+
+        for (const pagina of paginas) {
+          out.addPage(pagina);
+          if (fundoBranco) pintarFundoBranco(out, pagina);
+        }
+
+        ctx.onProgress(
+          (i + (inicio + lote.length) / indices.length) / ctx.files.length,
+          `${source.name}: página ${Math.min(inicio + lote.length, indices.length)} de ${indices.length}`,
+        );
+        await respirar(ctx);
+      }
     }
 
     await respirar(ctx);
