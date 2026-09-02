@@ -22,6 +22,8 @@ type Ponte = {
   salvarVarios: (arquivos: { nome: string; bytes: ArrayBuffer }[]) => Promise<ResultadoSalvarVarios>;
   salvarNumerado: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
   abrir: (caminho: string) => Promise<ResultadoSalvar>;
+  abrirAqui: (caminho: string) => Promise<ResultadoSalvar>;
+  abrirNoNavegador: (caminho: string) => Promise<ResultadoSalvar>;
   escolherArquivos: (extensoes?: string[]) => Promise<ArquivoEscolhido[]>;
   lerArquivo: (caminho: string) => Promise<{ ok: boolean; nome?: string; bytes?: ArrayBuffer; erro?: string }>;
   aoLerArquivo: (callback: (dados: { caminho: string; lidos: number; total: number }) => void) => () => void;
@@ -102,6 +104,20 @@ export async function salvarNumerado(nome: string, blob: Blob): Promise<Resultad
   const api = ponte();
   if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
   return api.salvarNumerado(nome, await blob.arrayBuffer());
+}
+
+/** Abre numa janela do próprio programa. */
+export async function abrirNoAplicativo(caminho: string): Promise<ResultadoSalvar> {
+  const api = ponte();
+  if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
+  return api.abrirAqui(caminho);
+}
+
+/** Abre no navegador padrão do sistema. */
+export async function abrirNoNavegador(caminho: string): Promise<ResultadoSalvar> {
+  const api = ponte();
+  if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
+  return api.abrirNoNavegador(caminho);
 }
 
 /** Abre o arquivo já salvo no programa padrão do sistema. */
