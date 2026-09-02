@@ -12,6 +12,9 @@
 
 export type ArquivoDoSistema = { nome: string; bytes: ArrayBuffer };
 
+/** O que o diálogo devolve antes de ler: barato, e chega na hora. */
+export type ArquivoEscolhido = { nome: string; caminho: string; tamanho: number };
+
 type Ponte = {
   ehAplicativo: true;
   versao: () => Promise<string>;
@@ -19,7 +22,9 @@ type Ponte = {
   salvarVarios: (arquivos: { nome: string; bytes: ArrayBuffer }[]) => Promise<ResultadoSalvarVarios>;
   salvarNumerado: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
   abrir: (caminho: string) => Promise<ResultadoSalvar>;
-  escolherArquivos: (extensoes?: string[]) => Promise<ArquivoDoSistema[]>;
+  escolherArquivos: (extensoes?: string[]) => Promise<ArquivoEscolhido[]>;
+  lerArquivo: (caminho: string) => Promise<{ ok: boolean; nome?: string; bytes?: ArrayBuffer; erro?: string }>;
+  aoLerArquivo: (callback: (dados: { caminho: string; lidos: number; total: number }) => void) => () => void;
   revelar: (caminho: string) => Promise<boolean>;
   impressao: {
     preparar: () => Promise<{ ok: boolean; id?: string; erro?: string }>;
@@ -102,11 +107,31 @@ export async function salvarVarios(arquivos: { nome: string; blob: Blob }[]): Pr
   return api.salvarVarios(convertidos);
 }
 
-export async function escolherArquivos(extensoes?: string[]): Promise<File[]> {
+/**
+ * Abre o diálogo e devolve o que foi escolhido, sem ler o conteúdo.
+ *
+ * Ler aqui era o que deixava a tela muda: com 400 MB, entre fechar o diálogo
+ * e o arquivo aparecer passavam dezenas de segundos sem nada acontecendo.
+ */
+export async function escolherArquivos(extensoes?: string[]): Promise<ArquivoEscolhido[]> {
+  return (await ponte()?.escolherArquivos(extensoes)) ?? [];
+}
+
+/** Lê um arquivo já escolhido e entrega como File. */
+export async function lerArquivoEscolhido(escolhido: ArquivoEscolhido): Promise<File> {
   const api = ponte();
-  if (!api) return [];
-  const escolhidos = await api.escolherArquivos(extensoes);
-  return escolhidos.map((arquivo) => new File([arquivo.bytes], arquivo.nome));
+  if (!api) throw new Error('Fora do aplicativo.');
+
+  const r = await api.lerArquivo(escolhido.caminho);
+  if (!r.ok || !r.bytes) throw new Error(r.erro ?? 'Não foi possível ler o arquivo.');
+  return new File([r.bytes], r.nome ?? escolhido.nome);
+}
+
+/** Progresso da leitura. Devolve a função de cancelar a inscrição. */
+export function aoLerArquivo(
+  callback: (dados: { caminho: string; lidos: number; total: number }) => void,
+): () => void {
+  return ponte()?.aoLerArquivo(callback) ?? (() => {});
 }
 
 /**
