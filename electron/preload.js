@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('greenpdf', {
 
   /** Manda o PDF para a fila de impressão, com o diálogo do sistema. */
   /** Impressoras que o Windows enxerga: locais, de rede e virtuais. */
+  /** Abre as Preferências do driver, onde fica o tipo/espessura do papel. */
+  preferenciasDaImpressora: (impressora) => ipcRenderer.invoke('impressora:preferencias', { impressora }),
+
   listarImpressoras: () => ipcRenderer.invoke('impressora:listar'),
 
   imprimir: (nome, bytes, opcoes) => ipcRenderer.invoke('arquivo:imprimir', { nome, bytes, opcoes }),
