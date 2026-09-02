@@ -404,6 +404,45 @@ function registrarCanais() {
     }
   });
 
+  /**
+   * Abre o arquivo numa janela do próprio programa.
+   *
+   * O Chromium tem leitor de PDF embutido, então é só carregar. Isso não
+   * serve para imprimir — ali o print() sai com a tela do leitor, e não com
+   * o documento —, mas para ler está de bom tamanho.
+   */
+  ipcMain.handle('arquivo:abrir-aqui', (_evento, { caminho }) => {
+    if (typeof caminho !== 'string' || !fs.existsSync(caminho)) {
+      return { ok: false, erro: 'Arquivo não encontrado.' };
+    }
+
+    const leitor = new BrowserWindow({
+      width: 900,
+      height: 1000,
+      title: path.basename(caminho),
+      backgroundColor: '#ffffff',
+      icon: path.join(__dirname, 'icone.png'),
+      autoHideMenuBar: true,
+      webPreferences: { sandbox: true, plugins: true, nodeIntegration: false, contextIsolation: true },
+    });
+    leitor.loadFile(caminho);
+    return { ok: true, caminho };
+  });
+
+  /** Abre no navegador padrão do sistema. */
+  ipcMain.handle('arquivo:abrir-no-navegador', async (_evento, { caminho }) => {
+    if (typeof caminho !== 'string' || !fs.existsSync(caminho)) {
+      return { ok: false, erro: 'Arquivo não encontrado.' };
+    }
+    try {
+      // file:// com barras normais: é o que o navegador entende.
+      await shell.openExternal('file:///' + caminho.split(path.sep).join('/'));
+      return { ok: true, caminho };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
+  });
+
   /** Abre o arquivo no programa padrão do Windows. */
   ipcMain.handle('arquivo:abrir', async (_evento, { caminho }) => {
     if (typeof caminho !== 'string' || !fs.existsSync(caminho)) {

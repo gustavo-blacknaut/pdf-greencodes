@@ -19,6 +19,7 @@ export function Dropzone({
   onFiles,
   onEscolhidos,
   onLendo,
+  onFalha,
 }: {
   accept: string[];
   acceptLabel: string;
@@ -29,6 +30,8 @@ export function Dropzone({
   onEscolhidos?: (escolhidos: ArquivoEscolhido[]) => void;
   /** Quanto já foi lido de cada arquivo. */
   onLendo?: (nome: string, lidos: number, total: number) => void;
+  /** Chamado quando a leitura não foi até o fim, para tirar o marcador da tela. */
+  onFalha?: (nomes: string[], erro: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -70,6 +73,12 @@ export function Dropzone({
         arquivos.push(await lerArquivoEscolhido(escolhido));
       }
       onFiles(arquivos);
+    } catch (erro) {
+      // Sem isto o marcador na tela ficaria em "carregando" para sempre.
+      onFalha?.(
+        lista.map((e) => e.nome),
+        erro instanceof Error ? erro.message : 'Não foi possível ler o arquivo.',
+      );
     } finally {
       cancelar();
     }
