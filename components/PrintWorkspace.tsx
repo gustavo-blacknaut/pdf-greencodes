@@ -14,6 +14,9 @@ import {
   Plus,
   Printer,
   X,
+  SlidersHorizontal,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { Dropzone } from './Dropzone';
 import { vault } from '@/lib/ephemeral';
@@ -22,6 +25,7 @@ import { loadPdfJs } from '@/lib/pdf/lazy';
 import { validarFila } from '@/lib/pdf/guards';
 import {
   estaNoAplicativo,
+  abrirPreferenciasDaImpressora,
   imprimirArquivo,
   listarImpressoras,
   type Impressora,
@@ -102,6 +106,12 @@ export function PrintWorkspace() {
   const [pagina, setPagina] = useState(1);
   const [renderizando, setRenderizando] = useState(false);
   const [docPronto, setDocPronto] = useState(0);
+  // 0 = ajustar à largura disponível; acima disso é zoom fixo (1 = 100%).
+  const [zoom, setZoom] = useState(0);
+  const [larguraDisponivel, setLarguraDisponivel] = useState(0);
+  // Escala que a última renderização usou. O zoom parte dela: sem isso, o
+  // primeiro clique em "+" saltava de "ajustado a 188%" para 125%, encolhendo.
+  const [escalaAtual, setEscalaAtual] = useState(1);
 
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [noApp, setNoApp] = useState(false);
@@ -111,6 +121,7 @@ export function PrintWorkspace() {
   const [aviso, setAviso] = useState<string | null>(null);
 
   const telaRef = useRef<HTMLCanvasElement>(null);
+  const molduraRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<any>; destroy: () => Promise<void> } | null>(
     null,
   );
@@ -259,28 +270,46 @@ export function PrintWorkspace() {
   }, [item?.id, item?.blob]);
 
   /**
-   * Desenha uma página só, na largura da tela e sem passar de 1x.
+   * Desenha a página escolhida.
    *
-   * A prévia serve para conferir se é o arquivo certo e se a orientação está
-   * boa, não para ler o documento — por isso não vale gastar CPU com mais.
+   * A nitidez vem de renderizar na densidade real da tela: antes o canvas
+   * saía em 1x e o texto ficava borrado em qualquer monitor moderno. O fator
+   * é limitado a 2, e a área total a 6 megapixels, para a conta não explodir
+   * em máquina fraca nem em zoom alto.
    */
   useEffect(() => {
     const doc = docRef.current;
-    if (!doc) return;
+    if (!doc || !larguraDisponivel) return;
     let vivo = true;
 
     void (async () => {
       setRenderizando(true);
       try {
         const p = await doc.getPage(Math.min(pagina, doc.numPages));
-        const original = p.getViewport({ scale: 1 });
-        const escala = Math.min(1, 820 / original.width);
-        const viewport = p.getViewport({ scale: escala });
+        const natural = p.getViewport({ scale: 1 });
 
+        // Quanto a página ocupa na tela, em pixels de CSS.
+        const ajuste = larguraDisponivel / natural.width;
+        const escalaCss = zoom > 0 ? zoom : Math.min(ajuste, 2);
+        setEscalaAtual(escalaCss);
+
+        const densidade = Math.min(window.devicePixelRatio || 1, 2);
+        let escala = escalaCss * densidade;
+
+        // Teto de área: 6 MP é o suficiente para leitura e não trava a aba.
+        const megapixels = (natural.width * escala * natural.height * escala) / 1_000_000;
+        if (megapixels > 6) escala *= Math.sqrt(6 / megapixels);
+
+        const viewport = p.getViewport({ scale: escala });
         const tela = telaRef.current;
         if (!tela || !vivo) return;
+
         tela.width = Math.floor(viewport.width);
         tela.height = Math.floor(viewport.height);
+        // O canvas é grande por dentro e do tamanho certo por fora: é isso
+        // que dá texto nítido em vez de ampliado.
+        tela.style.width = `${Math.round(natural.width * escalaCss)}px`;
+        tela.style.height = `${Math.round(natural.height * escalaCss)}px`;
 
         const contexto = tela.getContext('2d');
         if (contexto) {
@@ -301,7 +330,19 @@ export function PrintWorkspace() {
     return () => {
       vivo = false;
     };
-  }, [pagina, docPronto]);
+  }, [pagina, docPronto, zoom, larguraDisponivel]);
+
+  // A prévia acompanha o tamanho da janela: sem isso ela fica pequena no
+  // monitor grande e estourada no pequeno.
+  useEffect(() => {
+    const moldura = molduraRef.current;
+    if (!moldura) return;
+    const medir = () => setLarguraDisponivel(moldura.clientWidth);
+    medir();
+    const observador = new ResizeObserver(medir);
+    observador.observe(moldura);
+    return () => observador.disconnect();
+  }, [item?.id]);
 
   function mudar<K extends keyof OpcoesImpressao>(chave: K, valor: OpcoesImpressao[K]) {
     setOpcoes((atual) => ({ ...atual, [chave]: valor }));
@@ -410,6 +451,78 @@ export function PrintWorkspace() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
           <div className="space-y-4">
+            {item?.blob && (
+              <div className="card overflow-hidden">
+                <div className="flex items-center gap-2 border-b px-4 py-2">
+                  <p className="min-w-0 flex-1 truncate text-xs text-muted">Prévia · {item.nomeOriginal}</p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setZoom(Math.max(0.25, escalaAtual - 0.25))}
+                      className="btn-ghost px-2 py-1"
+                      aria-label="Diminuir zoom"
+                    >
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setZoom(0)}
+                      className={cx(
+                        'rounded-lg border px-2.5 py-1 text-[12px] font-medium tabular-nums transition',
+                        zoom === 0 ? 'border-transparent bg-ink text-bg' : 'text-muted hover:text-ink',
+                      )}
+                      title="Ajustar à largura"
+                    >
+                      {zoom === 0 ? 'Ajustado' : `${Math.round(zoom * 100)}%`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setZoom(Math.min(4, escalaAtual + 0.25))}
+                      className="btn-ghost px-2 py-1"
+                      aria-label="Aumentar zoom"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div ref={molduraRef} className="max-h-[70vh] overflow-auto bg-bg/40 p-4">
+                  <div className="relative mx-auto w-fit">
+                    <canvas ref={telaRef} className="block rounded-lg bg-white shadow-lg" />
+                    {renderizando && (
+                      <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">
+                        <Loader2 className="h-5 w-5 animate-spin text-brand" />
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {item.paginas > 1 && (
+                  <div className="flex items-center justify-center gap-3 border-t px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                      disabled={pagina <= 1}
+                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
+                      aria-label="Página anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="text-sm tabular-nums text-muted">
+                      {pagina} de {item.paginas}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPagina((p) => Math.min(item.paginas, p + 1))}
+                      disabled={pagina >= item.paginas}
+                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
+                      aria-label="Próxima página"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="card overflow-hidden">
               <div className="flex items-center gap-3 border-b px-4 py-3">
                 <p className="flex-1 text-sm font-medium">
@@ -495,46 +608,6 @@ export function PrintWorkspace() {
               </div>
             </div>
 
-            {item?.blob && (
-              <div className="card overflow-hidden">
-                <p className="truncate border-b px-4 py-2.5 text-xs text-muted">Prévia · {item.nomeOriginal}</p>
-                <div className="grid min-h-72 place-items-center bg-bg/40 p-4">
-                  <div className="relative">
-                    <canvas ref={telaRef} className="max-w-full rounded-lg bg-white shadow-lg" />
-                    {renderizando && (
-                      <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">
-                        <Loader2 className="h-5 w-5 animate-spin text-brand" />
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {item.paginas > 1 && (
-                  <div className="flex items-center justify-center gap-3 border-t px-4 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setPagina((p) => Math.max(1, p - 1))}
-                      disabled={pagina <= 1}
-                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
-                      aria-label="Página anterior"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <span className="text-sm tabular-nums text-muted">
-                      {pagina} de {item.paginas}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPagina((p) => Math.min(item.paginas, p + 1))}
-                      disabled={pagina >= item.paginas}
-                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
-                      aria-label="Próxima página"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="card h-fit p-5">
@@ -568,6 +641,25 @@ export function PrintWorkspace() {
                       ))}
                     </select>
                   )}
+
+                  {/*
+                    Tipo e espessura do papel não passam pela API do Windows:
+                    ficam no driver. Este botão leva direto à janela dele, e o
+                    que for marcado lá vale para o que enviarmos daqui.
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => void abrirPreferenciasDaImpressora(opcoes.impressora ?? '')}
+                    disabled={!opcoes.impressora}
+                    className="btn-ghost mt-2 w-full justify-start px-3 py-2 text-[13px] disabled:opacity-40"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Tipo e espessura do papel...
+                  </button>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+                    Papel grosso, fotográfico ou etiqueta ficam na janela do driver. O que você marcar lá vale para as
+                    impressões feitas aqui.
+                  </p>
                 </div>
               )}
 
@@ -709,7 +801,7 @@ export function PrintWorkspace() {
 
             <p className="mt-4 text-xs leading-relaxed text-muted">
               {noApp
-                ? 'Cada arquivo vira um trabalho separado na impressora. Tipo e espessura do papel são do driver dela, nas Preferências do Windows.'
+                ? 'Cada arquivo da fila vira um trabalho separado na impressora.'
                 : 'No navegador cada arquivo abre a caixa de impressão uma vez. No aplicativo a fila inteira vai de uma vez, sem perguntar.'}
             </p>
           </div>

@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
+const { spawn } = require('node:child_process');
 
 const integracao = require('./integracao-windows');
 
@@ -470,6 +471,35 @@ function registrarCanais() {
    * ('Microsoft Print to PDF' e afins). O nome tecnico e o que a impressao
    * usa; o amigavel e o que a pessoa reconhece.
    */
+  /**
+   * Abre as Preferências de Impressão do próprio driver.
+   *
+   * Tipo e espessura de papel (comum, fotográfico, cartão, etiqueta) não
+   * passam pela API do Windows: ficam no DEVMODE privado do driver, e só a
+   * janela dele mexe nisso. O que o sistema entrega é tamanho, cor e duplex.
+   *
+   * O que a pessoa marcar ali vira o padrão daquela impressora, e o nosso
+   * envio silencioso sai com esse padrão — então dá para escolher o papel
+   * grosso lá e imprimir por aqui.
+   */
+  ipcMain.handle('impressora:preferencias', (_evento, { impressora }) => {
+    if (typeof impressora !== 'string' || !impressora.trim()) {
+      return { ok: false, erro: 'Escolha uma impressora primeiro.' };
+    }
+    try {
+      // Solto e sem esperar: a janela é modal do Windows, e travar o app
+      // atrás dela deixaria a fila congelada.
+      const filho = spawn('rundll32.exe', ['printui.dll,PrintUIEntry', '/e', '/n', impressora], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      filho.unref();
+      return { ok: true };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
+  });
+
   ipcMain.handle('impressora:listar', async () => {
     if (!janela) return [];
     const lista = await janela.webContents.getPrintersAsync();
