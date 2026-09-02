@@ -68,7 +68,12 @@ export function PreviaDaPagina({
           </div>
         </div>
         <div ref={molduraRef} className="max-h-[70vh] overflow-auto bg-bg/40 p-4">
-          <div className="relative mx-auto w-fit">
+        {/*
+          min-w-fit no filho: centralizar com mx-auto dentro de area rolavel
+          esconde a parte esquerda quando o conteudo e maior que a moldura, e
+          nao da para rolar ate ela.
+        */}
+          <div className="relative mx-auto flex min-w-fit justify-center">
             <canvas ref={telaRef} className="block rounded-lg bg-white shadow-lg" />
             {renderizando && (
               <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">

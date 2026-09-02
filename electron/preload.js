@@ -32,14 +32,22 @@ contextBridge.exposeInMainWorld('greenpdf', {
   /** Diálogo nativo de abrir. Devolve nome e conteúdo de cada escolhido. */
   escolherArquivos: (extensoes) => ipcRenderer.invoke('arquivo:escolher', { extensoes }),
 
-  /** Manda o PDF para a fila de impressão, com o diálogo do sistema. */
-  /** Impressoras que o Windows enxerga: locais, de rede e virtuais. */
   /** Abre as Preferências do driver, onde fica o tipo/espessura do papel. */
   preferenciasDaImpressora: (impressora) => ipcRenderer.invoke('impressora:preferencias', { impressora }),
 
+  /** Impressoras que o Windows enxerga: locais, de rede e virtuais. */
   listarImpressoras: () => ipcRenderer.invoke('impressora:listar'),
 
-  imprimir: (nome, bytes, opcoes) => ipcRenderer.invoke('arquivo:imprimir', { nome, bytes, opcoes }),
+  /**
+   * Impressão em três tempos: abre a sessão, manda cada página desenhada e
+   * então envia. Quem desenha é a interface, que é onde o pdf.js mora.
+   */
+  impressao: {
+    preparar: () => ipcRenderer.invoke('impressao:preparar'),
+    pagina: (id, indice, bytes) => ipcRenderer.invoke('impressao:pagina', { id, indice, bytes }),
+    enviar: (id, opcoes) => ipcRenderer.invoke('impressao:enviar', { id, opcoes }),
+    descartar: (id) => ipcRenderer.invoke('impressao:descartar', { id }),
+  },
 
   /** Mostra o arquivo salvo no Explorador. */
   revelar: (caminho) => ipcRenderer.invoke('arquivo:revelar', { caminho }),
