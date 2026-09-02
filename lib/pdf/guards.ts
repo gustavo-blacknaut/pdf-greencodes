@@ -6,17 +6,57 @@
  * de PDF), limitar memória e tempo, e deixar a operação sempre cancelável.
  */
 
-export const LIMITES = {
-  /** Um arquivo sozinho. Acima disso a aba costuma morrer antes de terminar. */
+/**
+ * Tetos do navegador.
+ *
+ * Uma aba não tem a memória da máquina inteira: ela tem o que o navegador
+ * deixa, e um PDF de 400 MB aberto pelo pdf-lib pede vários múltiplos disso.
+ * Passar daqui não trava um arquivo, trava a aba.
+ */
+const LIMITES_NAVEGADOR = {
   bytesPorArquivo: 150 * 1024 * 1024,
-  /** Soma de todos os arquivos da fila. */
   bytesTotais: 1024 * 1024 * 1024,
   arquivos: 100,
-  /** Miniaturas na grade. O resto vira placeholder numerado. */
   miniaturas: 300,
-  /** Teto de tempo de uma operação inteira. */
   tempoOperacaoMs: 5 * 60 * 1000,
-} as const;
+};
+
+/**
+ * Tetos do aplicativo.
+ *
+ * Aqui é um programa instalado, com a memória da máquina à disposição, e o
+ * uso real inclui digitalização de centenas de páginas. Acima de 1 GB o
+ * trabalho é lento e pode faltar memória — mas isso é problema de quem
+ * escolheu o arquivo, não motivo para recusar.
+ */
+const LIMITES_APLICATIVO = {
+  bytesPorArquivo: 2 * 1024 * 1024 * 1024,
+  bytesTotais: 4 * 1024 * 1024 * 1024,
+  arquivos: 500,
+  miniaturas: 300,
+  // Documento grande leva mais que cinco minutos, e cortar no meio seria pior.
+  tempoOperacaoMs: 30 * 60 * 1000,
+};
+
+/** Acima disto o app avisa que vai demorar, mas não impede. */
+export const AVISO_ARQUIVO_GRANDE = 300 * 1024 * 1024;
+
+let noAplicativo = false;
+
+/**
+ * Liga os tetos do aplicativo.
+ *
+ * É uma chave e não uma leitura de `window.greenpdf` porque estes limites
+ * também são usados em teste, onde não existe ponte nenhuma.
+ */
+export function usarLimitesDoAplicativo(ligado: boolean): void {
+  noAplicativo = ligado;
+}
+
+export const LIMITES = new Proxy({} as typeof LIMITES_NAVEGADOR, {
+  get: (_alvo, chave: string) =>
+    (noAplicativo ? LIMITES_APLICATIVO : LIMITES_NAVEGADOR)[chave as keyof typeof LIMITES_NAVEGADOR],
+});
 
 export class ArquivoRejeitado extends Error {
   constructor(message: string) {
