@@ -38,6 +38,16 @@ const PAPEL_MM = {
   Tabloid: [279, 432],
 };
 
+/** O nome que o CSS entende. Deixar o @page nomear o papel evita conversão. */
+const PAPEL_CSS = {
+  A3: 'A3',
+  A4: 'A4',
+  A5: 'A5',
+  Legal: 'legal',
+  Letter: 'letter',
+  Tabloid: 'ledger',
+};
+
 async function preparar() {
   const id = `greencodes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pasta = path.join(os.tmpdir(), id);
@@ -82,39 +92,61 @@ const AJUSTES = {
 /**
  * Uma folha por imagem.
  *
- * A margem entra na regra @page e é descontada do tamanho da imagem: sem
- * descontar, a imagem ocuparia a folha inteira e a margem não apareceria.
+ * O tamanho vem em porcentagem da folha, e não em milímetros. Com milímetros
+ * o resultado saía na metade do papel: o Chromium monta a página no tamanho
+ * pedido, descobre que ela não cabe na área imprimível — que é menor que o
+ * papel, por causa da margem física da impressora — e encolhe tudo para
+ * caber. Uma A4 declarada em milímetros virava uma A5 no meio da folha.
+ *
+ * Em porcentagem não há o que encolher: a caixa já é do tamanho da página que
+ * o próprio Chromium montou a partir do papel escolhido.
  */
 function montarHtml(paginas, papel, opcoes = {}) {
-  const [larguraMm, alturaMm] = PAPEL_MM[papel] || PAPEL_MM.A4;
-
   const limitar = (valor) => Math.min(Math.max(Number(valor) || 0, 0), 40);
   const lados = limitar(opcoes.margemLadosMm);
   const cima = limitar(opcoes.margemCimaMm);
   const encaixe = AJUSTES[opcoes.ajuste] || AJUSTES.pagina;
 
-  const larguraUtil = Math.max(10, larguraMm - lados * 2);
-  const alturaUtil = Math.max(10, alturaMm - cima * 2);
+  // O nome do trabalho na fila da impressora sai daqui. Sem isto aparecia o
+  // nome do arquivo temporário, e a fila mostrava 'folhas.html'.
+  const titulo = String(opcoes.titulo || 'Documento')
+    .replace(/[<>&]/g, '')
+    .slice(0, 120);
 
   const imagens = paginas
     .sort()
-    .map((arquivo) => `<img src="file://${arquivo.split(path.sep).join('/')}" alt="">`)
+    .map(
+      (arquivo) =>
+        `<div class="folha"><img src="file://${arquivo.split(path.sep).join('/')}" alt=""></div>`,
+    )
     .join('\n');
 
   return `<!doctype html>
 <meta charset="utf-8">
+<title>${titulo}</title>
 <style>
-  @page { size: ${larguraMm}mm ${alturaMm}mm; margin: ${cima}mm ${lados}mm; }
+  @page { size: ${PAPEL_CSS[papel] || "A4"}; margin: ${cima}mm ${lados}mm; }
   html, body { margin: 0; padding: 0; background: #fff; }
-  img {
-    display: block;
-    width: ${larguraUtil}mm;
-    height: ${alturaUtil}mm;
-    object-fit: ${encaixe};
+
+  /* 100% da caixa da página, que já desconta a margem do @page. */
+  .folha {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
     page-break-after: always;
     break-after: page;
   }
-  img:last-child { page-break-after: auto; break-after: auto; }
+  .folha:last-child { page-break-after: auto; break-after: auto; }
+
+  .folha img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: ${encaixe};
+  }
 </style>
 ${imagens}
 `;
@@ -135,7 +167,7 @@ const ESPERAR_IMAGENS = `
   })
 `;
 
-async function enviar({ id, opcoes }) {
+async function enviar({ id, opcoes, nome }) {
   const sessao = sessoes.get(id);
   if (!sessao) return { ok: false, erro: 'Sessão de impressão não encontrada.' };
   if (!sessao.paginas.length) return { ok: false, erro: 'Nenhuma página para imprimir.' };
@@ -145,7 +177,7 @@ async function enviar({ id, opcoes }) {
   let janela = null;
 
   try {
-    await fsp.writeFile(html, montarHtml(sessao.paginas, config.papel, config), 'utf8');
+    await fsp.writeFile(html, montarHtml(sessao.paginas, config.papel, { ...config, titulo: nome }), 'utf8');
 
     janela = new BrowserWindow({
       show: false,
