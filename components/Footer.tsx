@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CATEGORIES, TOOLS } from '@/lib/tools';
+import { CATEGORIES, TOOLS, rotaDaFerramenta } from '@/lib/tools';
 
 export function Footer() {
   return (
@@ -23,7 +23,7 @@ export function Footer() {
                 <ul className="space-y-2">
                   {items.map((tool) => (
                     <li key={tool.slug}>
-                      <Link href={`/${tool.slug}`} className="text-sm text-ink/80 transition hover:text-brand">
+                      <Link href={rotaDaFerramenta(tool, '')} className="text-sm text-ink/80 transition hover:text-brand">
                         {tool.name}
                       </Link>
                     </li>

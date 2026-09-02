@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { CATEGORIES, TOOLS, type Tool } from '@/lib/tools';
+import { CATEGORIES, TOOLS, rotaDaFerramenta, type Tool } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { ToolIcon } from './ToolIcon';
 import { cx } from '@/lib/utils';
@@ -17,7 +17,7 @@ export function ToolGrid() {
 
   /** Hover = intenção. Buscamos a rota e aquecemos o motor antes do clique. */
   function preload(tool: Tool) {
-    router.prefetch(`/${tool.slug}`);
+    router.prefetch(rotaDaFerramenta(tool, ''));
     void warmEngine({ raster: tool.operation === 'compress' || tool.operation === 'pdf-to-images' });
   }
 
@@ -52,7 +52,7 @@ export function ToolGrid() {
         {visible.map((tool, index) => (
           <Link
             key={tool.slug}
-            href={`/${tool.slug}`}
+            href={rotaDaFerramenta(tool, '')}
             onPointerEnter={() => preload(tool)}
             onFocus={() => preload(tool)}
             className="group card relative overflow-hidden p-5 transition-all duration-300 hover:-translate-y-1 animate-fade-up"
