@@ -293,8 +293,9 @@ export const TOOLS: Tool[] = [
     slug: 'varias-por-folha',
     operation: 'n-up',
     name: 'Várias por folha',
-    tagline: 'Duas ou quatro páginas por folha',
-    description: 'Monta um PDF econômico para impressão, encaixando 2 ou 4 páginas em cada folha A4.',
+    tagline: 'De 2 a 16 páginas por folha',
+    description:
+      'Monta um PDF econômico para impressão, encaixando de 2 a 16 páginas em cada folha A4. Em 2 por folha a folha deita; nas outras ela fica em pé, com a grade mais quadrada possível.',
     icon: 'Grid2x2',
     accent: '163 230 53',
     category: 'Organizar',
@@ -309,8 +310,13 @@ export const TOOLS: Tool[] = [
         label: 'Páginas por folha',
         default: '2',
         options: [
-          { value: '2', label: '2 por folha', hint: 'A4 deitada, lado a lado' },
-          { value: '4', label: '4 por folha', hint: 'A4 em pé, grade 2 × 2' },
+          { value: '2', label: '2 por folha', hint: 'folha deitada, 1 x 2' },
+          { value: '4', label: '4 por folha', hint: 'grade 2 x 2' },
+          { value: '6', label: '6 por folha', hint: 'grade 2 x 3' },
+          { value: '8', label: '8 por folha', hint: 'grade 2 x 4' },
+          { value: '9', label: '9 por folha', hint: 'grade 3 x 3' },
+          { value: '12', label: '12 por folha', hint: 'grade 3 x 4' },
+          { value: '16', label: '16 por folha', hint: 'grade 4 x 4' },
         ],
       },
       {

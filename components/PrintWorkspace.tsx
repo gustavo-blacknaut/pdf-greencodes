@@ -21,7 +21,7 @@ import {
 import { Dropzone } from './Dropzone';
 import { vault } from '@/lib/ephemeral';
 import { inspectFile, runOperation, type OperationId } from '@/lib/pdf/engine';
-import { loadPdfJs } from '@/lib/pdf/lazy';
+import { loadPdfJs, loadPdfLib } from '@/lib/pdf/lazy';
 import { validarFila } from '@/lib/pdf/guards';
 import {
   estaNoAplicativo,
@@ -112,6 +112,16 @@ export function PrintWorkspace() {
   // Escala que a última renderização usou. O zoom parte dela: sem isso, o
   // primeiro clique em "+" saltava de "ajustado a 188%" para 125%, encolhendo.
   const [escalaAtual, setEscalaAtual] = useState(1);
+
+  // 1 = uma página por folha, sem montagem. Acima disso o documento é
+  // remontado antes da prévia, para o que aparece ser o que sai impresso.
+  const [porFolha, setPorFolha] = useState(1);
+  const [montado, setMontado] = useState<{ id: string; porFolha: number; blob: Blob; paginas: number } | null>(null);
+  const [montando, setMontando] = useState(false);
+
+  // 0 = manda o arquivo inteiro de uma vez. Acima disso ele é fatiado e vai
+  // em lotes, na ordem.
+  const [lote, setLote] = useState(0);
 
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [noApp, setNoApp] = useState(false);
@@ -243,9 +253,21 @@ export function PrintWorkspace() {
 
   const item = fila.find((i) => i.id === selecionado) ?? null;
 
+  /** O que vale para prévia e impressão: o montado, quando há montagem. */
+  function paraSaida(alvo: ItemFila | null): { blob: Blob; paginas: number } | null {
+    if (!alvo?.blob) return null;
+    if (montado && montado.id === alvo.id && montado.porFolha === porFolha) {
+      return { blob: montado.blob, paginas: montado.paginas };
+    }
+    // Enquanto a montagem não termina, não vale desenhar o original: a
+    // prévia mostraria uma coisa e a impressora sairia com outra.
+    return porFolha > 1 ? null : { blob: alvo.blob, paginas: alvo.paginas };
+  }
+
   /** Abre o documento escolhido uma vez e guarda a referência. */
   useEffect(() => {
-    if (!item?.blob) {
+    const saida = paraSaida(item);
+    if (!saida) {
       void docRef.current?.destroy();
       docRef.current = null;
       return;
@@ -254,7 +276,7 @@ export function PrintWorkspace() {
     let vivo = true;
     void (async () => {
       const pdfjs = await loadPdfJs();
-      const doc = await pdfjs.getDocument({ data: new Uint8Array(await item.blob!.arrayBuffer()) }).promise;
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(await saida.blob.arrayBuffer()) }).promise;
       if (!vivo) {
         await doc.destroy();
         return;
@@ -267,7 +289,8 @@ export function PrintWorkspace() {
     return () => {
       vivo = false;
     };
-  }, [item?.id, item?.blob]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id, item?.blob, montado, porFolha]);
 
   /**
    * Desenha a página escolhida.
@@ -332,6 +355,50 @@ export function PrintWorkspace() {
     };
   }, [pagina, docPronto, zoom, larguraDisponivel]);
 
+  /**
+   * Remonta o arquivo escolhido com N páginas por folha.
+   *
+   * A prévia tem que mostrar o que sai da impressora, então a montagem
+   * acontece antes de desenhar, e não na hora de imprimir.
+   */
+  useEffect(() => {
+    if (!item?.blob || porFolha <= 1) {
+      setMontado(null);
+      return;
+    }
+    if (montado?.id === item.id && montado.porFolha === porFolha) return;
+
+    let vivo = true;
+    void (async () => {
+      setMontando(true);
+      try {
+        const arquivo = new File([item.blob!], item.nome, { type: 'application/pdf' });
+        const carregado = await inspectFile(arquivo, item.id);
+        const r = await runOperation('n-up', {
+          files: [carregado],
+          options: { perSheet: porFolha, espacamentoMm: 2, margemMm: 4, border: false },
+          onProgress: () => {},
+        });
+        if (!vivo) return;
+        setMontado({
+          id: item.id,
+          porFolha,
+          blob: r.files[0].blob,
+          paginas: r.files[0].pages ?? 1,
+        });
+      } catch {
+        if (vivo) setMontado(null);
+      } finally {
+        if (vivo) setMontando(false);
+      }
+    })();
+
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id, item?.blob, porFolha]);
+
   // A prévia acompanha o tamanho da janela: sem isso ela fica pequena no
   // monitor grande e estourada no pequeno.
   useEffect(() => {
@@ -353,11 +420,38 @@ export function PrintWorkspace() {
   }
 
   /**
-   * Manda a fila inteira, um arquivo por vez.
+   * Fatia um PDF em blocos de N páginas, na ordem.
    *
-   * Cada um vira um trabalho próprio na impressora, e é isso que evita ter de
-   * juntar tudo num PDF só antes de imprimir. Erro num item não derruba o
-   * resto: ele fica marcado e a fila segue.
+   * Documento grande num único trabalho é o que trava fila de impressora em
+   * rede de 100 Mbps: o spool recebe dezenas de megabytes de uma vez e a
+   * impressora fica sem resposta até digerir tudo. Em blocos, cada um cabe na
+   * memória dela e a próxima parte só sai depois que a anterior entrou.
+   */
+  async function fatiar(blob: Blob, paginas: number, tamanho: number): Promise<Blob[]> {
+    if (tamanho <= 0 || paginas <= tamanho) return [blob];
+
+    const { PDFDocument } = await loadPdfLib();
+    const origem = await PDFDocument.load(await blob.arrayBuffer());
+    const partes: Blob[] = [];
+
+    for (let inicio = 0; inicio < paginas; inicio += tamanho) {
+      const indices = Array.from(
+        { length: Math.min(tamanho, paginas - inicio) },
+        (_, k) => inicio + k,
+      );
+      const parte = await PDFDocument.create();
+      for (const pagina of await parte.copyPages(origem, indices)) parte.addPage(pagina);
+      const bytes = await parte.save({ useObjectStreams: true });
+      partes.push(new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/pdf' }));
+    }
+    return partes;
+  }
+
+  /**
+   * Manda a fila inteira, um arquivo por vez, e cada arquivo em lotes quando
+   * está configurado assim. A ordem é sempre a da fila e a das páginas.
+   *
+   * Erro num item não derruba o resto: ele fica marcado e a fila segue.
    */
   async function imprimirTudo() {
     const prontos = fila.filter((i) => i.blob);
@@ -372,29 +466,47 @@ export function PrintWorkspace() {
     }
 
     let enviados = 0;
+    let trabalhos = 0;
     let cancelou = false;
 
     for (const alvo of prontos) {
       setImprimindo(alvo.id);
-      const r = await imprimirArquivo(alvo.nome, alvo.blob!, opcoes);
+      const saida = paraSaida(alvo);
+      if (!saida) continue;
 
-      if (r.ok && !r.cancelado) {
+      let falhou: string | undefined;
+      const partes = await fatiar(saida.blob, saida.paginas, lote);
+
+      for (let n = 0; n < partes.length; n += 1) {
+        const nome = partes.length > 1 ? alvo.nome.replace(/.pdf$/i, `-parte${n + 1}.pdf`) : alvo.nome;
+        const r = await imprimirArquivo(nome, partes[n], opcoes);
+
+        if (r.cancelado) {
+          cancelou = true;
+          break;
+        }
+        if (!r.ok) {
+          falhou = r.erro;
+          break;
+        }
+        trabalhos += 1;
+      }
+
+      if (cancelou) break;
+      if (falhou) {
+        setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'erro', erro: falhou } : i)));
+      } else {
         enviados += 1;
         setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'impresso' } : i)));
-      } else if (r.cancelado) {
-        // Cancelou no diálogo: parar a fila é o que a pessoa quis.
-        cancelou = true;
-        break;
-      } else {
-        setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'erro', erro: r.erro } : i)));
       }
     }
 
     setImprimindo(null);
+    const emLotes = trabalhos > enviados ? ` em ${trabalhos} lotes` : '';
     setAviso(
       cancelou
         ? `Fila interrompida. ${enviados} de ${prontos.length} foram enviados.`
-        : `${enviados} arquivo${enviados === 1 ? '' : 's'} enviado${enviados === 1 ? '' : 's'} para a impressora.`,
+        : `${enviados} arquivo${enviados === 1 ? '' : 's'} enviado${enviados === 1 ? '' : 's'}${emLotes}.`,
     );
   }
 
@@ -451,7 +563,9 @@ export function PrintWorkspace() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
           <div className="space-y-4">
-            {item?.blob && (
+            {(() => {
+              const saida = paraSaida(item);
+              return item?.blob ? (
               <div className="card overflow-hidden">
                 <div className="flex items-center gap-2 border-b px-4 py-2">
                   <p className="min-w-0 flex-1 truncate text-xs text-muted">Prévia · {item.nomeOriginal}</p>
@@ -495,7 +609,7 @@ export function PrintWorkspace() {
                     )}
                   </div>
                 </div>
-                {item.paginas > 1 && (
+                {(saida?.paginas ?? 1) > 1 && (
                   <div className="flex items-center justify-center gap-3 border-t px-4 py-2.5">
                     <button
                       type="button"
@@ -507,12 +621,12 @@ export function PrintWorkspace() {
                       <ChevronLeft className="h-4 w-4" />
                     </button>
                     <span className="text-sm tabular-nums text-muted">
-                      {pagina} de {item.paginas}
+                      {pagina} de {saida?.paginas ?? 1}
                     </span>
                     <button
                       type="button"
-                      onClick={() => setPagina((p) => Math.min(item.paginas, p + 1))}
-                      disabled={pagina >= item.paginas}
+                      onClick={() => setPagina((p) => Math.min(saida?.paginas ?? 1, p + 1))}
+                      disabled={pagina >= (saida?.paginas ?? 1)}
                       className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
                       aria-label="Próxima página"
                     >
@@ -521,7 +635,8 @@ export function PrintWorkspace() {
                   </div>
                 )}
               </div>
-            )}
+              ) : null;
+            })()}
 
             <div className="card overflow-hidden">
               <div className="flex items-center gap-3 border-b px-4 py-3">
@@ -662,6 +777,55 @@ export function PrintWorkspace() {
                   </p>
                 </div>
               )}
+
+              <div>
+                <label htmlFor="porFolha" className="field-label">
+                  Páginas por folha
+                </label>
+                <select
+                  id="porFolha"
+                  className={cx(campo, 'mt-1.5')}
+                  value={String(porFolha)}
+                  onChange={(e) => setPorFolha(Number(e.target.value))}
+                >
+                  <option value="1">1 — uma por folha</option>
+                  <option value="2">2 — folha deitada</option>
+                  <option value="4">4 — grade 2 x 2</option>
+                  <option value="6">6 — grade 2 x 3</option>
+                  <option value="8">8 — grade 2 x 4</option>
+                  <option value="9">9 — grade 3 x 3</option>
+                  <option value="12">12 — grade 3 x 4</option>
+                  <option value="16">16 — grade 4 x 4</option>
+                </select>
+                {porFolha > 1 && (
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    {montando ? 'Montando a prévia...' : 'A prévia acima já mostra as folhas montadas.'}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="lote" className="field-label">
+                  Enviar em lotes
+                </label>
+                <select
+                  id="lote"
+                  className={cx(campo, 'mt-1.5')}
+                  value={String(lote)}
+                  onChange={(e) => setLote(Number(e.target.value))}
+                >
+                  <option value="0">Arquivo inteiro de uma vez</option>
+                  <option value="1">Página por página</option>
+                  <option value="5">A cada 5 páginas</option>
+                  <option value="10">A cada 10 páginas</option>
+                  <option value="25">A cada 25 páginas</option>
+                  <option value="50">A cada 50 páginas</option>
+                </select>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+                  Documento grande num trabalho só costuma travar impressora de rede. Em lotes, cada parte só sai
+                  depois que a anterior entrou, e a ordem é mantida.
+                </p>
+              </div>
 
               <div>
                 <label htmlFor="papel" className="field-label">
