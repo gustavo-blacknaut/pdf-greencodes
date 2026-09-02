@@ -1268,15 +1268,39 @@ async function resize(ctx: RunContext): Promise<RunResult> {
   };
 }
 
+/**
+ * Grade de cada quantidade por folha, e se a folha deita.
+ *
+ * A regra é manter as celas o mais quadradas possível: 6 em pé fica 2x3, 6
+ * deitado fica 3x2. Deitar a folha quando as colunas passam das linhas evita
+ * cela espremida e sobra de papel nas laterais.
+ */
+const GRADES: Record<number, { colunas: number; linhas: number; deitada: boolean }> = {
+  2: { colunas: 1, linhas: 2, deitada: true },
+  4: { colunas: 2, linhas: 2, deitada: false },
+  6: { colunas: 2, linhas: 3, deitada: false },
+  8: { colunas: 2, linhas: 4, deitada: false },
+  9: { colunas: 3, linhas: 3, deitada: false },
+  12: { colunas: 3, linhas: 4, deitada: false },
+  16: { colunas: 4, linhas: 4, deitada: false },
+};
+
+/** As quantidades oferecidas, na ordem. */
+export const POR_FOLHA = Object.keys(GRADES).map(Number);
+
 async function nUp(ctx: RunContext): Promise<RunResult> {
   const { PDFDocument, rgb } = await loadPdfLib();
   const source = ctx.files[0];
   const doc = await openWithPdfLib(source.bytes, source.senha);
-  const perSheet = Number(ctx.options.perSheet ?? 2) === 4 ? 4 : 2;
-  // Espaçamento é o vão ENTRE as páginas. Margem é a sobra na beirada da folha.
-  // Antes os dois eram a mesma coisa, e o resultado comia alguns milímetros de
-  // cada lado sem ninguém pedir. O PDF não precisa de margem de segurança: quem
-  // cuida disso é a impressora, na opção de ajustar a área impressa.
+
+  const pedido = Number(ctx.options.perSheet ?? 2);
+  const porFolha = GRADES[pedido] ? pedido : 2;
+  const { colunas, linhas, deitada } = GRADES[porFolha];
+
+  // Espaçamento é o vão ENTRE as páginas. Margem é a sobra na beirada da
+  // folha. Antes os dois eram a mesma coisa, e o resultado comia alguns
+  // milímetros de cada lado sem ninguém pedir. O PDF não precisa de margem de
+  // segurança: quem cuida disso é a impressora.
   const gap = mmParaPt(Math.min(Math.max(Number(ctx.options.espacamentoMm ?? 0), 0), 30));
   const margem = mmParaPt(Math.min(Math.max(Number(ctx.options.margemMm ?? 0), 0), 30));
   const border = ctx.options.border === true || ctx.options.border === 'true';
@@ -1284,38 +1308,41 @@ async function nUp(ctx: RunContext): Promise<RunResult> {
   const out = await PDFDocument.create();
   const embedded = await out.embedPages(doc.getPages());
   const [a4w, a4h] = PAGE_SIZES.a4;
-  // 2 por folha = A4 deitada com 2 colunas; 4 por folha = A4 em pé, grade 2x2.
-  const sheetW = perSheet === 2 ? a4h : a4w;
-  const sheetH = perSheet === 2 ? a4w : a4h;
-  const cols = 2;
-  const rows = perSheet === 2 ? 1 : 2;
-  const cellW = (sheetW - margem * 2 - gap * (cols - 1)) / cols;
-  const cellH = (sheetH - margem * 2 - gap * (rows - 1)) / rows;
+  const folhaL = deitada ? a4h : a4w;
+  const folhaA = deitada ? a4w : a4h;
 
-  for (let start = 0; start < embedded.length; start += perSheet) {
-    ctx.onProgress(start / embedded.length, `Folha ${Math.floor(start / perSheet) + 1}`);
-    const sheet = out.addPage([sheetW, sheetH]);
-    for (let slot = 0; slot < perSheet && start + slot < embedded.length; slot += 1) {
-      const item = embedded[start + slot];
-      const col = slot % cols;
-      const row = Math.floor(slot / cols);
-      const cellX = margem + col * (cellW + gap);
-      const cellY = sheetH - margem - (row + 1) * cellH - row * gap;
-      const ratio = Math.min(cellW / item.width, cellH / item.height);
-      const w = item.width * ratio;
-      const h = item.height * ratio;
-      sheet.drawPage(item, {
-        x: cellX + (cellW - w) / 2,
-        y: cellY + (cellH - h) / 2,
-        xScale: ratio,
-        yScale: ratio,
+  const celaL = (folhaL - margem * 2 - gap * (colunas - 1)) / colunas;
+  const celaA = (folhaA - margem * 2 - gap * (linhas - 1)) / linhas;
+
+  for (let inicio = 0; inicio < embedded.length; inicio += porFolha) {
+    ctx.onProgress(inicio / embedded.length, `Folha ${Math.floor(inicio / porFolha) + 1}`);
+    const folha = out.addPage([folhaL, folhaA]);
+
+    for (let vaga = 0; vaga < porFolha && inicio + vaga < embedded.length; vaga += 1) {
+      const item = embedded[inicio + vaga];
+      const coluna = vaga % colunas;
+      const linha = Math.floor(vaga / colunas);
+      const x = margem + coluna * (celaL + gap);
+      // A leitura começa em cima, mas o eixo Y do PDF cresce para cima.
+      const y = folhaA - margem - (linha + 1) * celaA - linha * gap;
+
+      const proporcao = Math.min(celaL / item.width, celaA / item.height);
+      const larg = item.width * proporcao;
+      const alt = item.height * proporcao;
+
+      folha.drawPage(item, {
+        x: x + (celaL - larg) / 2,
+        y: y + (celaA - alt) / 2,
+        xScale: proporcao,
+        yScale: proporcao,
       });
+
       if (border) {
-        sheet.drawRectangle({
-          x: cellX,
-          y: cellY,
-          width: cellW,
-          height: cellH,
+        folha.drawRectangle({
+          x,
+          y,
+          width: celaL,
+          height: celaA,
           borderColor: rgb(0.8, 0.8, 0.85),
           borderWidth: 0.7,
         });
@@ -1327,10 +1354,13 @@ async function nUp(ctx: RunContext): Promise<RunResult> {
   const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
   return {
-    files: [{ name: suffixName(source.name, `${perSheet}-por-folha`), blob, pages: out.getPageCount() }],
+    files: [{ name: suffixName(source.name, `${porFolha}-por-folha`), blob, pages: out.getPageCount() }],
     inputBytes: source.size,
     outputBytes: blob.size,
-    notes: [`${embedded.length} páginas em ${out.getPageCount()} folhas.`],
+    notes: [
+      `${embedded.length} páginas em ${out.getPageCount()} folhas, ${colunas} x ${linhas} por folha` +
+        (deitada ? ', com a folha deitada.' : '.'),
+    ],
   };
 }
 
