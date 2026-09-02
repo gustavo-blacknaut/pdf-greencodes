@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { CATEGORIES, TOOLS, type Tool } from '@/lib/tools';
+import { CATEGORIES, TOOLS, rotaDaFerramenta, type Tool } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { ToolIcon } from './ToolIcon';
 import { cx } from '@/lib/utils';
@@ -32,7 +32,7 @@ export function AppToolGrid() {
   }, [busca, categoria]);
 
   function preparar(tool: Tool) {
-    router.prefetch(`/app/${tool.slug}`);
+    router.prefetch(rotaDaFerramenta(tool, '/app'));
     void warmEngine({ raster: tool.operation === 'compress' || tool.operation === 'pdf-to-images' });
   }
 
@@ -81,7 +81,7 @@ export function AppToolGrid() {
           {visiveis.map((tool, indice) => (
             <Link
               key={tool.slug}
-              href={`/app/${tool.slug}`}
+              href={rotaDaFerramenta(tool, '/app')}
               onPointerEnter={() => preparar(tool)}
               onFocus={() => preparar(tool)}
               className="flex items-start gap-3 rounded-xl border border-line bg-surface p-3.5 transition hover:border-brand/50 hover:bg-elevated"

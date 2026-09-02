@@ -249,6 +249,9 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
 
     const startedAt = performance.now();
     try {
+      // Ferramenta de página própria nunca chega aqui: a grade leva direto
+      // para a rota dela.
+      if (!tool.operation) throw new Error('Esta ferramenta tem tela própria.');
       const data = await runOperation(tool.operation, {
         files: ready.map((item) => item.data!),
         options,

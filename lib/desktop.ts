@@ -17,6 +17,8 @@ type Ponte = {
   versao: () => Promise<string>;
   salvarArquivo: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
   salvarVarios: (arquivos: { nome: string; bytes: ArrayBuffer }[]) => Promise<ResultadoSalvarVarios>;
+  salvarNumerado: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
+  abrir: (caminho: string) => Promise<ResultadoSalvar>;
   escolherArquivos: (extensoes?: string[]) => Promise<ArquivoDoSistema[]>;
   revelar: (caminho: string) => Promise<boolean>;
   imprimir: (nome: string, bytes: ArrayBuffer, opcoes?: OpcoesImpressao) => Promise<ResultadoSalvar>;
@@ -66,6 +68,23 @@ export async function salvarArquivo(nome: string, blob: Blob): Promise<Resultado
   const api = ponte();
   if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
   return api.salvarArquivo(nome, await blob.arrayBuffer());
+}
+
+/**
+ * Grava em Documentos/PDF.GreenCodes com o primeiro número livre: 1.pdf,
+ * 2.pdf, 3.pdf. Sem diálogo e sem sobrescrever nada.
+ */
+export async function salvarNumerado(nome: string, blob: Blob): Promise<ResultadoSalvar> {
+  const api = ponte();
+  if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
+  return api.salvarNumerado(nome, await blob.arrayBuffer());
+}
+
+/** Abre o arquivo já salvo no programa padrão do sistema. */
+export async function abrirNoSistema(caminho: string): Promise<ResultadoSalvar> {
+  const api = ponte();
+  if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
+  return api.abrir(caminho);
 }
 
 export async function salvarVarios(arquivos: { nome: string; blob: Blob }[]): Promise<ResultadoSalvarVarios> {

@@ -8,7 +8,8 @@ import { getTool, TOOLS } from '@/lib/tools';
 type Params = { params: Promise<{ slug: string }> };
 
 export function generateStaticParams() {
-  return TOOLS.map((tool) => ({ slug: tool.slug }));
+  // A de impressão tem página própria; gerar /imprimir aqui colidiria com ela.
+  return TOOLS.filter((tool) => !tool.rota).map((tool) => ({ slug: tool.slug }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
