@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { LayoutGrid, Menu, X } from 'lucide-react';
-import { CATEGORIES, TOOLS } from '@/lib/tools';
+import { CATEGORIES, TOOLS, rotaDaFerramenta } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { cx } from '@/lib/utils';
 
@@ -77,7 +77,7 @@ export function Header() {
                     {items.map((tool) => (
                       <Link
                         key={tool.slug}
-                        href={`/${tool.slug}`}
+                        href={rotaDaFerramenta(tool, '')}
                         onClick={() => setOpen(false)}
                         className="rounded-lg px-2 py-1.5 text-sm text-ink/90 hover:bg-elevated"
                       >
