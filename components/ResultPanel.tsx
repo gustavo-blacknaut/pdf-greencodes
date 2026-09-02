@@ -2,11 +2,31 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Download, ExternalLink, HardDrive, Info, Printer, RotateCcw, Timer, Trash2 } from 'lucide-react';
+import {
+  CheckCircle2,
+  Chrome,
+  Download,
+  ExternalLink,
+  FolderOpen,
+  HardDrive,
+  Info,
+  MonitorPlay,
+  Printer,
+  RotateCcw,
+  Timer,
+  Trash2,
+} from 'lucide-react';
 import { vault } from '@/lib/ephemeral';
 import { zipFiles, type RunResult } from '@/lib/pdf/engine';
 import { cx, formatBytes, formatDuration } from '@/lib/utils';
-import { abrirNoSistema, estaNoAplicativo, revelarNoExplorador, salvarNumerado } from '@/lib/desktop';
+import {
+  abrirNoAplicativo,
+  abrirNoNavegador,
+  abrirNoSistema,
+  estaNoAplicativo,
+  revelarNoExplorador,
+  salvarNumerado,
+} from '@/lib/desktop';
 
 export function ResultPanel({
   entryId,
@@ -106,7 +126,9 @@ export function ResultPanel({
     }
     setSalvoEm(salvo.caminho);
 
-    const aberto = await abrirNoSistema(salvo.caminho);
+    // No próprio programa: é o que evita depender de qual leitor de PDF a
+    // máquina tem instalado, e o que a pessoa pediu.
+    const aberto = await abrirNoAplicativo(salvo.caminho);
     if (!aberto.ok) setError(aberto.erro ?? null);
   }
 
@@ -242,16 +264,44 @@ export function ResultPanel({
       )}
 
       {salvoEm && (
-        <div className="flex flex-wrap items-center gap-2 border-t bg-brand/5 px-5 py-3 text-xs text-brand">
-          <HardDrive className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">Salvo em {salvoEm}</span>
-          <button
-            type="button"
-            onClick={() => revelarNoExplorador(salvoEm)}
-            className="shrink-0 underline underline-offset-2 hover:no-underline"
-          >
-            Mostrar na pasta
-          </button>
+        <div className="border-t bg-brand/5 px-5 py-3">
+          <p className="flex items-center gap-2 text-xs text-brand">
+            <HardDrive className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">Salvo em {salvoEm}</span>
+          </p>
+
+          {/* Três destinos porque cada um serve a um momento: conferir sem
+              sair do programa, abrir num leitor de verdade, ou ir ao arquivo. */}
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => void abrirNoAplicativo(salvoEm)}
+              className="btn-ghost px-3 py-1.5 text-[12px]"
+            >
+              <MonitorPlay className="h-3.5 w-3.5" /> Abrir aqui
+            </button>
+            <button
+              type="button"
+              onClick={() => void abrirNoNavegador(salvoEm)}
+              className="btn-ghost px-3 py-1.5 text-[12px]"
+            >
+              <Chrome className="h-3.5 w-3.5" /> No navegador
+            </button>
+            <button
+              type="button"
+              onClick={() => void abrirNoSistema(salvoEm)}
+              className="btn-ghost px-3 py-1.5 text-[12px]"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> No programa padrão
+            </button>
+            <button
+              type="button"
+              onClick={() => revelarNoExplorador(salvoEm)}
+              className="btn-ghost px-3 py-1.5 text-[12px]"
+            >
+              <FolderOpen className="h-3.5 w-3.5" /> Mostrar na pasta
+            </button>
+          </div>
         </div>
       )}
 

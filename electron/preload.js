@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('greenpdf', {
   /** Abre o arquivo no programa padrão do sistema. */
   abrir: (caminho) => ipcRenderer.invoke('arquivo:abrir', { caminho }),
 
+  /** Abre numa janela do próprio programa. */
+  abrirAqui: (caminho) => ipcRenderer.invoke('arquivo:abrir-aqui', { caminho }),
+
+  /** Abre no navegador padrão. */
+  abrirNoNavegador: (caminho) => ipcRenderer.invoke('arquivo:abrir-no-navegador', { caminho }),
+
   /** Escolhe uma pasta e grava vários arquivos de uma vez. */
   salvarVarios: (arquivos) => ipcRenderer.invoke('arquivo:salvar-varios', { arquivos }),
 
