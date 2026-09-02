@@ -134,9 +134,11 @@ export function Dropzone({
           {multiple ? ' · vários de uma vez' : ''}
         </span>
 
-        <span className="btn-ghost mt-5 px-4 py-2">
-          <FolderOpen className="h-4 w-4" /> Abrir arquivo{multiple ? 's' : ''}
-        </span>
+        {!compact && (
+          <span className="btn-ghost mt-5 px-4 py-2">
+            <FolderOpen className="h-4 w-4" /> Abrir arquivo{multiple ? 's' : ''}
+          </span>
+        )}
 
         {!compact && (
           <span className="mt-5 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] text-muted">
