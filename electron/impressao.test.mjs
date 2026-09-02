@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // interessa aqui, então lemos a função do arquivo sem carregar o resto.
 const fonte = fs.readFileSync(path.join(__dirname, 'impressao.js'), 'utf8');
 const corpo = fonte.slice(fonte.indexOf('const PAPEL_MM'), fonte.indexOf('async function preparar'));
-const montar = fonte.slice(fonte.indexOf('function montarHtml'), fonte.indexOf('/** Espera as imagens'));
+const montar = fonte.slice(fonte.indexOf('const AJUSTES'), fonte.indexOf('/** Espera as imagens'));
 const montarHtml = new Function('path', `${corpo}\n${montar}\nreturn montarHtml;`)(path);
 
 const folha = (n) => path.join(os.tmpdir(), 'sessao', `${String(n).padStart(4, '0')}.jpg`);
@@ -59,5 +59,30 @@ describe('HTML de impressão', () => {
     const html = montarHtml([folha(1)], 'A4');
     expect(html).toContain('file://');
     expect(html).not.toMatch(/file:\/\/[^"]*\\/);
+  });
+
+  it('desconta a margem do tamanho da imagem, senão ela não apareceria', () => {
+    const html = montarHtml([folha(1)], 'A4', { margemLadosMm: 10, margemCimaMm: 5 });
+    expect(html).toContain('margin: 5mm 10mm');
+    // A4 tem 210 x 297; sobra 190 x 287.
+    expect(html).toContain('width: 190mm');
+    expect(html).toContain('height: 287mm');
+  });
+
+  it('traduz o ajuste para o encaixe do CSS', () => {
+    expect(montarHtml([folha(1)], 'A4', { ajuste: 'pagina' })).toContain('object-fit: contain');
+    expect(montarHtml([folha(1)], 'A4', { ajuste: 'preencher' })).toContain('object-fit: cover');
+    expect(montarHtml([folha(1)], 'A4', { ajuste: 'original' })).toContain('object-fit: none');
+  });
+
+  it('cai em ajustar à página quando o ajuste é desconhecido', () => {
+    expect(montarHtml([folha(1)], 'A4', { ajuste: 'inventado' })).toContain('object-fit: contain');
+  });
+
+  it('não deixa a margem comer a folha inteira', () => {
+    const html = montarHtml([folha(1)], 'A5', { margemLadosMm: 999, margemCimaMm: 999 });
+    // 40mm é o teto por lado; A5 tem 148 de largura, então sobram 68.
+    expect(html).toContain('margin: 40mm 40mm');
+    expect(html).toContain('width: 68mm');
   });
 });
