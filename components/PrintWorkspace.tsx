@@ -6,19 +6,28 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowLeft,
+  Check,
   ChevronLeft,
   ChevronRight,
+  FileText,
   Loader2,
+  Plus,
   Printer,
-  RefreshCw,
+  X,
 } from 'lucide-react';
 import { Dropzone } from './Dropzone';
 import { vault } from '@/lib/ephemeral';
 import { inspectFile, runOperation, type OperationId } from '@/lib/pdf/engine';
 import { loadPdfJs } from '@/lib/pdf/lazy';
 import { validarFila } from '@/lib/pdf/guards';
-import { estaNoAplicativo, imprimirArquivo, listarImpressoras, type Impressora, type OpcoesImpressao } from '@/lib/desktop';
-import { cx, formatBytes } from '@/lib/utils';
+import {
+  estaNoAplicativo,
+  imprimirArquivo,
+  listarImpressoras,
+  type Impressora,
+  type OpcoesImpressao,
+} from '@/lib/desktop';
+import { cx, formatBytes, replaceExtension } from '@/lib/utils';
 
 const CHAVE = 'greencodes:impressao';
 
@@ -68,30 +77,45 @@ function lerSalvo(): OpcoesImpressao {
   }
 }
 
-type Documento = { nome: string; blob: Blob; paginas: number };
+type Estado = 'esperando' | 'convertendo' | 'pronto' | 'erro' | 'impresso';
+
+type ItemFila = {
+  id: string;
+  nome: string;
+  origem: File | Blob;
+  nomeOriginal: string;
+  blob: Blob | null;
+  paginas: number;
+  estado: Estado;
+  erro?: string;
+};
+
+let contador = 0;
+const proximoId = () => `i${(contador += 1)}_${Date.now().toString(36)}`;
 
 export function PrintWorkspace() {
   const parametros = useSearchParams();
   const noAppPelaRota = usePathname().startsWith('/app');
 
-  const [documento, setDocumento] = useState<Documento | null>(null);
-  const [preparando, setPreparando] = useState<string | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
+  const [fila, setFila] = useState<ItemFila[]>([]);
+  const [selecionado, setSelecionado] = useState<string | null>(null);
   const [pagina, setPagina] = useState(1);
   const [renderizando, setRenderizando] = useState(false);
-  // O desenho depende do documento já aberto. Sem este contador, o efeito de
-  // render corre antes de docRef existir e não volta mais: nada nas deps muda.
   const [docPronto, setDocPronto] = useState(0);
 
+  const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [noApp, setNoApp] = useState(false);
   const [impressoras, setImpressoras] = useState<Impressora[] | null>(null);
   const [opcoes, setOpcoes] = useState<OpcoesImpressao>(PADRAO);
-  const [enviando, setEnviando] = useState(false);
+  const [imprimindo, setImprimindo] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   const telaRef = useRef<HTMLCanvasElement>(null);
-  const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<any>; destroy: () => Promise<void> } | null>(null);
+  const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<any>; destroy: () => Promise<void> } | null>(
+    null,
+  );
   const tarefaRef = useRef<{ cancel: () => void } | null>(null);
+  const convertendoRef = useRef(false);
 
   useEffect(() => {
     setNoApp(estaNoAplicativo());
@@ -105,67 +129,112 @@ export function PrintWorkspace() {
     });
   }, []);
 
-  /** Arquivo vindo de outra ferramenta, guardado no cofre. */
+  const adicionar = useCallback((arquivos: (File | Blob)[], nomes?: string[]) => {
+    setErroGeral(null);
+    setFila((atual) => [
+      ...atual,
+      ...arquivos.map((arquivo, i) => {
+        const nomeOriginal = nomes?.[i] ?? (arquivo instanceof File ? arquivo.name : 'documento.pdf');
+        return {
+          id: proximoId(),
+          nome: replaceExtension(nomeOriginal, 'pdf'),
+          origem: arquivo,
+          nomeOriginal,
+          blob: null,
+          paginas: 0,
+          estado: 'esperando' as Estado,
+        };
+      }),
+    ]);
+  }, []);
+
+  /** Arquivos vindos de outra ferramenta, guardados no cofre. */
   useEffect(() => {
     const fonte = parametros.get('fonte');
-    const alvo = parametros.get('arquivo');
     if (!fonte) return;
     const entrada = vault.get(fonte);
-    const achado = entrada?.files.find((f) => f.name === alvo) ?? entrada?.files[0];
-    if (achado) void receber(achado.blob, achado.name);
-    else setErro('O resultado expirou ou já foi apagado da memória. Escolha o arquivo de novo.');
-    // Só na montagem: depois disso quem manda é o que está na tela.
+    if (!entrada?.files.length) {
+      setErroGeral('O resultado expirou ou já foi apagado da memória. Escolha os arquivos de novo.');
+      return;
+    }
+    const alvo = parametros.get('arquivo');
+    const escolhidos = alvo ? entrada.files.filter((f) => f.name === alvo) : entrada.files;
+    const lista = escolhidos.length ? escolhidos : entrada.files;
+    adicionar(
+      lista.map((f) => f.blob),
+      lista.map((f) => f.name),
+    );
+    // Só na montagem: depois disso quem manda é a fila na tela.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Converte o que não é PDF e conta as páginas. */
-  const receber = useCallback(async (blob: Blob, nome: string) => {
-    setErro(null);
-    setDocumento(null);
-    setPagina(1);
-
-    try {
-      let pdf = blob;
-      let nomeFinal = nome;
-
-      const operacao = conversaoPara(nome);
-      if (operacao) {
-        setPreparando(`Convertendo ${nome}...`);
-        const arquivo = new File([blob], nome);
-        const carregado = await inspectFile(arquivo, 'imprimir');
-        if (carregado.error) throw new Error(carregado.error);
-        const resultado = await runOperation(operacao, {
-          files: [carregado],
-          options: {},
-          onProgress: (_f, rotulo) => rotulo && setPreparando(rotulo),
-        });
-        pdf = resultado.files[0].blob;
-        nomeFinal = resultado.files[0].name;
-      }
-
-      setPreparando('Abrindo o documento...');
-      const pdfjs = await loadPdfJs();
-      const doc = await pdfjs.getDocument({ data: new Uint8Array(await pdf.arrayBuffer()) }).promise;
-      const paginas = doc.numPages;
-      await doc.destroy();
-
-      setDocumento({ nome: nomeFinal, blob: pdf, paginas });
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Não foi possível preparar este arquivo.');
-    } finally {
-      setPreparando(null);
-    }
-  }, []);
-
   /**
-   * Abre o documento uma vez e guarda a referência.
+   * Converte um item por vez.
    *
-   * Reabrir o PDF a cada troca de página faz o pdf.js reparsear o arquivo
-   * inteiro: num i3 antigo isso é meio segundo por clique. Aqui só a página
-   * pedida é desenhada, e o documento fica aberto entre uma e outra.
+   * Em série de propósito: converter cinco Words de uma vez em máquina fraca
+   * trava a aba. Cada item vira PDF, conta as páginas e só então o próximo
+   * entra.
    */
   useEffect(() => {
-    if (!documento) {
+    if (convertendoRef.current) return;
+    const alvo = fila.find((item) => item.estado === 'esperando');
+    if (!alvo) return;
+
+    convertendoRef.current = true;
+    const atualizar = (mudanca: Partial<ItemFila>) =>
+      setFila((atual) => atual.map((item) => (item.id === alvo.id ? { ...item, ...mudanca } : item)));
+
+    void (async () => {
+      atualizar({ estado: 'convertendo' });
+      try {
+        let pdf = alvo.origem;
+        let nomeFinal = alvo.nomeOriginal;
+
+        const operacao = conversaoPara(alvo.nomeOriginal);
+        if (operacao) {
+          const arquivo =
+            alvo.origem instanceof File ? alvo.origem : new File([alvo.origem], alvo.nomeOriginal);
+          const carregado = await inspectFile(arquivo, alvo.id);
+          if (carregado.error) throw new Error(carregado.error);
+          const resultado = await runOperation(operacao, {
+            files: [carregado],
+            options: {},
+            onProgress: () => {},
+          });
+          pdf = resultado.files[0].blob;
+          // O nome da conversão é genérico ("imagens.pdf"): na fila o que
+          // importa é reconhecer de qual arquivo veio.
+          nomeFinal = replaceExtension(alvo.nomeOriginal, 'pdf');
+        }
+
+        const pdfjs = await loadPdfJs();
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(await pdf.arrayBuffer()) }).promise;
+        const paginas = doc.numPages;
+        await doc.destroy();
+
+        atualizar({ estado: 'pronto', blob: pdf, paginas, nome: nomeFinal });
+      } catch (e) {
+        atualizar({ estado: 'erro', erro: e instanceof Error ? e.message : 'Não foi possível preparar o arquivo.' });
+      } finally {
+        convertendoRef.current = false;
+        // Empurra o laço: o próximo "esperando" entra na rodada seguinte.
+        setFila((atual) => [...atual]);
+      }
+    })();
+  }, [fila]);
+
+  // O primeiro que ficar pronto vira a prévia, se ainda não há escolhido.
+  useEffect(() => {
+    if (selecionado && fila.some((i) => i.id === selecionado && i.estado !== 'erro')) return;
+    const primeiro = fila.find((i) => i.blob);
+    setSelecionado(primeiro?.id ?? null);
+  }, [fila, selecionado]);
+
+  const item = fila.find((i) => i.id === selecionado) ?? null;
+
+  /** Abre o documento escolhido uma vez e guarda a referência. */
+  useEffect(() => {
+    if (!item?.blob) {
       void docRef.current?.destroy();
       docRef.current = null;
       return;
@@ -174,20 +243,20 @@ export function PrintWorkspace() {
     let vivo = true;
     void (async () => {
       const pdfjs = await loadPdfJs();
-      const doc = await pdfjs.getDocument({ data: new Uint8Array(await documento.blob.arrayBuffer()) }).promise;
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(await item.blob!.arrayBuffer()) }).promise;
       if (!vivo) {
         await doc.destroy();
         return;
       }
       docRef.current = doc;
-      setDocPronto((n) => n + 1);
       setPagina(1);
+      setDocPronto((n) => n + 1);
     })();
 
     return () => {
       vivo = false;
     };
-  }, [documento]);
+  }, [item?.id, item?.blob]);
 
   /**
    * Desenha uma página só, na largura da tela e sem passar de 1x.
@@ -197,7 +266,7 @@ export function PrintWorkspace() {
    */
   useEffect(() => {
     const doc = docRef.current;
-    if (!documento || !doc) return;
+    if (!doc) return;
     let vivo = true;
 
     void (async () => {
@@ -232,29 +301,67 @@ export function PrintWorkspace() {
     return () => {
       vivo = false;
     };
-  }, [documento, pagina, docPronto]);
+  }, [pagina, docPronto]);
 
   function mudar<K extends keyof OpcoesImpressao>(chave: K, valor: OpcoesImpressao[K]) {
     setOpcoes((atual) => ({ ...atual, [chave]: valor }));
   }
 
-  async function imprimir() {
-    if (!documento) return;
-    setEnviando(true);
+  function remover(id: string) {
+    setFila((atual) => atual.filter((i) => i.id !== id));
+  }
+
+  /**
+   * Manda a fila inteira, um arquivo por vez.
+   *
+   * Cada um vira um trabalho próprio na impressora, e é isso que evita ter de
+   * juntar tudo num PDF só antes de imprimir. Erro num item não derruba o
+   * resto: ele fica marcado e a fila segue.
+   */
+  async function imprimirTudo() {
+    const prontos = fila.filter((i) => i.blob);
+    if (!prontos.length) return;
+
     setAviso(null);
+    setErroGeral(null);
     try {
       localStorage.setItem(CHAVE, JSON.stringify(opcoes));
     } catch {
       /* modo anônimo: imprime do mesmo jeito */
     }
-    const r = await imprimirArquivo(documento.nome, documento.blob, opcoes);
-    setEnviando(false);
-    if (r.ok) setAviso(r.cancelado ? 'Impressão cancelada.' : 'Enviado para a impressora.');
-    else setErro(r.erro ?? 'Não foi possível imprimir.');
+
+    let enviados = 0;
+    let cancelou = false;
+
+    for (const alvo of prontos) {
+      setImprimindo(alvo.id);
+      const r = await imprimirArquivo(alvo.nome, alvo.blob!, opcoes);
+
+      if (r.ok && !r.cancelado) {
+        enviados += 1;
+        setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'impresso' } : i)));
+      } else if (r.cancelado) {
+        // Cancelou no diálogo: parar a fila é o que a pessoa quis.
+        cancelou = true;
+        break;
+      } else {
+        setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'erro', erro: r.erro } : i)));
+      }
+    }
+
+    setImprimindo(null);
+    setAviso(
+      cancelou
+        ? `Fila interrompida. ${enviados} de ${prontos.length} foram enviados.`
+        : `${enviados} arquivo${enviados === 1 ? '' : 's'} enviado${enviados === 1 ? '' : 's'} para a impressora.`,
+    );
   }
 
   const campo = 'w-full rounded-xl border bg-bg/60 px-3 py-2.5 text-sm text-ink outline-none transition';
   const raiz = noAppPelaRota ? '/app' : '/';
+  const prontos = fila.filter((i) => i.blob);
+  const totalPaginas = prontos.reduce((soma, i) => soma + i.paginas, 0);
+  const preparando = fila.some((i) => i.estado === 'esperando' || i.estado === 'convertendo');
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6">
@@ -269,106 +376,170 @@ export function PrintWorkspace() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Imprimir</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:text-[15px]">
-              Solte um PDF, foto, Word, Excel, PowerPoint ou texto. O que não for PDF é convertido aqui mesmo, você
-              confere na prévia e manda para a impressora.
+              Solte fotos, PDFs, Word, Excel e texto de uma vez. Cada arquivo entra na fila, é convertido aqui mesmo e
+              sai como um trabalho próprio na impressora — sem precisar juntar tudo num documento antes.
             </p>
           </div>
         </div>
       </header>
 
-      {erro && (
+      {erroGeral && (
         <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{erro}</span>
+          <span>{erroGeral}</span>
         </div>
       )}
 
-      {!documento ? (
+      {fila.length === 0 ? (
         <div className="card p-5">
-          {preparando ? (
-            <p className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-              <Loader2 className="h-4 w-4 animate-spin" /> {preparando}
-            </p>
-          ) : (
-            <Dropzone
-              accept={ACEITA}
-              acceptLabel="PDF, JPG, PNG, WebP, DOCX, XLSX, PPTX ou TXT"
-              multiple={false}
-              onFiles={(arquivos) => {
-                try {
-                  validarFila(arquivos, []);
-                } catch (e) {
-                  setErro(e instanceof Error ? e.message : 'Arquivo recusado.');
-                  return;
-                }
-                void receber(arquivos[0], arquivos[0].name);
-              }}
-            />
-          )}
+          <Dropzone
+            accept={ACEITA}
+            acceptLabel="PDF, JPG, PNG, WebP, DOCX, XLSX, PPTX ou TXT"
+            multiple
+            onFiles={(arquivos) => {
+              try {
+                validarFila(arquivos, []);
+              } catch (e) {
+                setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
+                return;
+              }
+              adicionar(arquivos);
+            }}
+          />
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-          <div className="card overflow-hidden">
-            <div className="flex items-center gap-3 border-b px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{documento.nome}</p>
-                <p className="text-xs text-muted">
-                  {formatBytes(documento.blob.size)} · {documento.paginas} página
-                  {documento.paginas > 1 ? 's' : ''}
+          <div className="space-y-4">
+            <div className="card overflow-hidden">
+              <div className="flex items-center gap-3 border-b px-4 py-3">
+                <p className="flex-1 text-sm font-medium">
+                  Fila · {fila.length} arquivo{fila.length === 1 ? '' : 's'}
+                  {totalPaginas > 0 && <span className="text-muted"> · {totalPaginas} páginas</span>}
                 </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setDocumento(null);
-                  setAviso(null);
-                }}
-                className="btn-ghost px-3 py-1.5 text-[13px]"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Trocar
-              </button>
-            </div>
-
-            <div className="grid min-h-80 place-items-center bg-bg/40 p-4">
-              <div className="relative">
-                <canvas ref={telaRef} className="max-w-full rounded-lg bg-white shadow-lg" />
-                {renderizando && (
-                  <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">
-                    <Loader2 className="h-5 w-5 animate-spin text-brand" />
+                {preparando && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparando...
                   </span>
                 )}
               </div>
+
+              <ul className="divide-y">
+                {fila.map((linha) => (
+                  <li
+                    key={linha.id}
+                    className={cx(
+                      'flex items-center gap-3 px-4 py-2.5',
+                      linha.id === selecionado && 'bg-elevated/60',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => linha.blob && setSelecionado(linha.id)}
+                      disabled={!linha.blob}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left disabled:cursor-default"
+                    >
+                      <span className="shrink-0 text-muted">
+                        {linha.estado === 'convertendo' || imprimindo === linha.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-brand" />
+                        ) : linha.estado === 'impresso' ? (
+                          <Check className="h-4 w-4 text-brand" />
+                        ) : linha.estado === 'erro' ? (
+                          <AlertTriangle className="h-4 w-4 text-rose-500" />
+                        ) : (
+                          <FileText className="h-4 w-4" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{linha.nomeOriginal}</span>
+                        <span className="block truncate text-xs text-muted">
+                          {linha.estado === 'erro'
+                            ? linha.erro
+                            : linha.estado === 'convertendo'
+                              ? 'Convertendo...'
+                              : linha.estado === 'esperando'
+                                ? 'Na fila'
+                                : linha.estado === 'impresso'
+                                  ? 'Enviado para a impressora'
+                                  : `${formatBytes(linha.blob!.size)} · ${linha.paginas} página${linha.paginas === 1 ? '' : 's'}`}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remover(linha.id)}
+                      className="shrink-0 text-muted transition hover:text-ink"
+                      aria-label={`Tirar ${linha.nomeOriginal} da fila`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="border-t p-3">
+                <Dropzone
+                  accept={ACEITA}
+                  acceptLabel="PDF, imagem, Word, Excel ou texto"
+                  multiple
+                  compact
+                  onFiles={(arquivos) => {
+                    try {
+                      validarFila(arquivos, fila.map((i) => ({ size: i.origem.size })));
+                    } catch (e) {
+                      setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
+                      return;
+                    }
+                    adicionar(arquivos);
+                  }}
+                />
+              </div>
             </div>
 
-            {documento.paginas > 1 && (
-              <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => setPagina((p) => Math.max(1, p - 1))}
-                  disabled={pagina <= 1}
-                  className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
-                  aria-label="Página anterior"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-sm tabular-nums text-muted">
-                  {pagina} de {documento.paginas}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPagina((p) => Math.min(documento.paginas, p + 1))}
-                  disabled={pagina >= documento.paginas}
-                  className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
-                  aria-label="Próxima página"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+            {item?.blob && (
+              <div className="card overflow-hidden">
+                <p className="truncate border-b px-4 py-2.5 text-xs text-muted">Prévia · {item.nomeOriginal}</p>
+                <div className="grid min-h-72 place-items-center bg-bg/40 p-4">
+                  <div className="relative">
+                    <canvas ref={telaRef} className="max-w-full rounded-lg bg-white shadow-lg" />
+                    {renderizando && (
+                      <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">
+                        <Loader2 className="h-5 w-5 animate-spin text-brand" />
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {item.paginas > 1 && (
+                  <div className="flex items-center justify-center gap-3 border-t px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                      disabled={pagina <= 1}
+                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
+                      aria-label="Página anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="text-sm tabular-nums text-muted">
+                      {pagina} de {item.paginas}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPagina((p) => Math.min(item.paginas, p + 1))}
+                      disabled={pagina >= item.paginas}
+                      className="btn-ghost px-2.5 py-1.5 disabled:opacity-40"
+                      aria-label="Próxima página"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           <div className="card h-fit p-5">
             <p className="text-sm font-semibold tracking-tight">Opções</p>
+            <p className="mt-1 text-xs text-muted">Valem para todos os arquivos da fila.</p>
 
             <div className="mt-4 space-y-3.5">
               {noApp && (
@@ -454,7 +625,7 @@ export function PrintWorkspace() {
 
               <div>
                 <label htmlFor="copias" className="field-label">
-                  Cópias
+                  Cópias de cada arquivo
                 </label>
                 <input
                   id="copias"
@@ -511,20 +682,35 @@ export function PrintWorkspace() {
 
             <button
               type="button"
-              onClick={() => void imprimir()}
-              disabled={enviando}
+              onClick={() => void imprimirTudo()}
+              disabled={!prontos.length || Boolean(imprimindo) || preparando}
               className="btn-primary mt-5 w-full py-3"
             >
-              {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-              {enviando ? 'Enviando...' : 'Imprimir'}
+              {imprimindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {imprimindo
+                ? 'Enviando...'
+                : prontos.length > 1
+                  ? `Imprimir os ${prontos.length}`
+                  : 'Imprimir'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFila([]);
+                setAviso(null);
+              }}
+              className="btn-ghost mt-2 w-full py-2 text-[13px]"
+            >
+              <Plus className="h-3.5 w-3.5 rotate-45" /> Limpar a fila
             </button>
 
             {aviso && <p className="mt-3 text-center text-xs text-brand">{aviso}</p>}
 
             <p className="mt-4 text-xs leading-relaxed text-muted">
               {noApp
-                ? 'Tipo e espessura do papel (comum, fotográfico, cartão) são do driver da impressora e ficam nas Preferências dela, no Windows.'
-                : 'No navegador quem escolhe a impressora é a caixa do próprio navegador. No aplicativo dá para escolher aqui e imprimir direto.'}
+                ? 'Cada arquivo vira um trabalho separado na impressora. Tipo e espessura do papel são do driver dela, nas Preferências do Windows.'
+                : 'No navegador cada arquivo abre a caixa de impressão uma vez. No aplicativo a fila inteira vai de uma vez, sem perguntar.'}
             </p>
           </div>
         </div>
