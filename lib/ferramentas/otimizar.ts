@@ -125,6 +125,18 @@ export const OTIMIZAR: Tool[] = [
     cta: 'Escurecer',
     fields: [
       {
+        key: 'tinta',
+        type: 'select',
+        label: 'Qual preto',
+        default: 'rgb',
+        options: [
+          { value: 'rgb', label: 'Preto de tela', hint: 'RGB comum · serve para laser e para ler na tela' },
+          { value: 'k100', label: 'K100', hint: 'só a chapa preta · sem erro de registro, o certo para texto' },
+          { value: 'rico', label: 'Preto rico', hint: '20C 20M 100K · mais fundo em área chapada' },
+        ],
+        help: 'K100 e preto rico saem em DeviceCMYK de verdade, sem perfil ICC no meio — o RIP recebe exatamente esses valores de tinta em vez de reconverter. Só no aplicativo: no site o motor não grava CMYK.',
+      },
+      {
         key: 'limite',
         type: 'range',
         label: 'A partir de que tom vira preto',

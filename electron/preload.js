@@ -65,8 +65,38 @@ contextBridge.exposeInMainWorld('greenpdf', {
     descartar: (id) => ipcRenderer.invoke('impressao:descartar', { id }),
   },
 
+  /**
+   * O motor de PDF em Python (PyMuPDF).
+   *
+   * Existe porque desenhar página no pdf.js é lento: medido no mesmo arquivo
+   * de 141 páginas, 1189 ms por página contra 277 do PyMuPDF. As ferramentas
+   * que rasterizam passam por aqui; as que só mexem na estrutura do PDF
+   * continuam rodando na própria janela, onde já eram rápidas.
+   *
+   * A interface trabalha com bytes e o motor com arquivo em disco, então a
+   * ponte grava a entrada numa pasta temporária e lê a saída de volta.
+   */
+  motor: {
+    executar: (acao, pedido) => ipcRenderer.invoke('motor:executar', { acao, pedido }),
+    cancelar: () => ipcRenderer.invoke('motor:cancelar'),
+    pastaTemporaria: () => ipcRenderer.invoke('motor:pasta-temporaria'),
+    gravarEntrada: (pasta, nome, bytes) => ipcRenderer.invoke('motor:gravar-entrada', { pasta, nome, bytes }),
+    lerSaida: (caminho) => ipcRenderer.invoke('motor:ler-saida', { caminho }),
+    limpar: (pasta) => ipcRenderer.invoke('motor:limpar', { pasta }),
+
+    /** Quanto já andou do trabalho atual. Devolve a função de desligar o aviso. */
+    aoAndar: (callback) => {
+      const ouvinte = (_evento, passo) => callback(passo);
+      ipcRenderer.on('motor:andamento', ouvinte);
+      return () => ipcRenderer.off('motor:andamento', ouvinte);
+    },
+  },
+
   /** Mostra o arquivo salvo no Explorador. */
   revelar: (caminho) => ipcRenderer.invoke('arquivo:revelar', { caminho }),
+
+  /** Abre a pasta onde os resultados são salvos. */
+  abrirPastaDosResultados: () => ipcRenderer.invoke('arquivo:pasta-resultados'),
 
   /** Arquivos abertos pelo sistema: clique duplo, "Abrir com", menu de contexto. */
   aoAbrirDoSistema: (callback) => {

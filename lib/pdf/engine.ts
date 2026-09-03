@@ -35,6 +35,7 @@ import {
 } from './operacoes/converter';
 import { crop, edit, flatten, headerFooter, pageNumbers, resize, watermark } from './operacoes/editar';
 import { protect, setMetadata, stripMetadata, unlock } from './operacoes/seguranca';
+import { rodarNoPython, temMotorPython } from './motor-python';
 import type { RunContext, RunResult } from './tipos';
 
 /* A interface importa tudo daqui, então o que ela usa é reexportado. */
@@ -97,7 +98,11 @@ export type OperationId = keyof typeof OPERATIONS;
 export async function runOperation(id: OperationId, ctx: RunContext): Promise<RunResult> {
   const operation = OPERATIONS[id];
   if (!operation) throw new Error(`Ferramenta desconhecida: ${id}`);
-  const resultado = await operation(ctx);
+
+  // No aplicativo, as ferramentas que rasterizam página vão para o motor
+  // Python: medido, 277 ms por página contra 1189 do pdf.js. No site
+  // `temMotorPython` é sempre falso e nada muda.
+  const resultado = temMotorPython(id, ctx) ? await rodarNoPython(id, ctx) : await operation(ctx);
 
   // `salvarPdf` devolve a senha ao resultado. O aviso fica aqui, num lugar só,
   // em vez de repetido em cada operação. Proteger e desbloquear ficam de fora:

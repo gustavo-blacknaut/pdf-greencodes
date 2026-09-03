@@ -10,3 +10,7 @@ next-env.d.ts
 dados/
 .claude/
 dist-app/
+motor/runtime/
+impressora/impressora.exe
+**/__pycache__/
+.pytest_cache/
