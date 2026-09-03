@@ -156,6 +156,141 @@ export async function repair(ctx: RunContext): Promise<RunResult> {
 }
 
 /**
+ * Roda a mesma máquina em todas as ferramentas que mexem na cor: desenha a
+ * página, transforma os pixels e devolve um PDF de imagens.
+ *
+ * Rasterizar descarta o texto vetorial, então o resultado deixa de ser
+ * pesquisável. É o preço de garantir que a cor no papel seja a que aparece
+ * na tela: mexer nas cores sem redesenhar exigiria reinterpretar cada objeto
+ * do PDF, um por um, e ainda assim não pegaria o que está dentro de imagem.
+ */
+async function redesenharComFiltro(
+  ctx: RunContext,
+  filtro: (dados: Uint8ClampedArray) => void,
+  sufixo: string,
+  notas: string[],
+): Promise<RunResult> {
+  const { PDFDocument } = await loadPdfLib();
+  const source = ctx.files[0];
+  const dpi = Math.max(72, Math.min(300, Number(ctx.options.dpi ?? 150)));
+  const doc = await openWithPdfJs(source.bytes, source.senha);
+  const out = await PDFDocument.create();
+  const canvas = document.createElement('canvas');
+
+  for (let i = 1; i <= doc.numPages; i += 1) {
+    ctx.onProgress((i - 1) / doc.numPages, `Página ${i} de ${doc.numPages}`);
+    const page = await doc.getPage(i);
+    const { widthPt, heightPt } = await renderPageToCanvas(page, dpi, canvas);
+
+    const pincel = canvas.getContext('2d');
+    if (pincel) {
+      const imagem = pincel.getImageData(0, 0, canvas.width, canvas.height);
+      filtro(imagem.data);
+      pincel.putImageData(imagem, 0, 0);
+    }
+
+    const jpeg = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+    const embutida = await out.embedJpg(await jpeg.arrayBuffer());
+    out.addPage([widthPt, heightPt]).drawImage(embutida, { x: 0, y: 0, width: widthPt, height: heightPt });
+
+    page.cleanup();
+    await respirar(ctx);
+  }
+  const paginas = doc.numPages;
+  await doc.destroy();
+
+  const blob = await salvarPdf(out, source.senha);
+  ctx.onProgress(1);
+  return {
+    files: [{ name: suffixName(source.name, sufixo), blob, pages: paginas }],
+    inputBytes: source.size,
+    outputBytes: blob.size,
+    notes: notas,
+  };
+}
+
+/** Luminância perceptual: verde pesa mais que vermelho, que pesa mais que azul. */
+function luz(dados: Uint8ClampedArray, p: number): number {
+  return 0.2126 * dados[p] + 0.7152 * dados[p + 1] + 0.0722 * dados[p + 2];
+}
+
+/**
+ * Inverte para preto e branco: escuro fica claro, claro fica escuro.
+ *
+ * Não é inverter cada canal de cor — isso devolve as complementares, que é
+ * outra coisa e quase nunca é o que se quer. O uso real é ler um documento
+ * de fundo escuro, ou economizar toner num que veio todo preto.
+ *
+ * Separada da operação para poder ser verificada sem montar um PDF inteiro.
+ */
+export function filtroInverter(dados: Uint8ClampedArray): void {
+  for (let p = 0; p < dados.length; p += 4) {
+    const cinza = Math.round(255 - luz(dados, p));
+    dados[p] = cinza;
+    dados[p + 1] = cinza;
+    dados[p + 2] = cinza;
+  }
+}
+
+/**
+ * Tudo acima do limite vira branco; o resto vira preto puro.
+ *
+ * Sem meio-termo de propósito: cinza claro imprime falhado, e texto
+ * digitalizado costuma sair cinza. Assim ele sai cheio.
+ */
+export function filtroTonsDePreto(dados: Uint8ClampedArray, limite: number): void {
+  for (let p = 0; p < dados.length; p += 4) {
+    const valor = luz(dados, p) > limite ? 255 : 0;
+    dados[p] = valor;
+    dados[p + 1] = valor;
+    dados[p + 2] = valor;
+  }
+}
+
+/**
+ * Inverte: o que era preto vira branco e o que era branco vira preto.
+ *
+ * Só em preto e branco, e não invertendo cada canal de cor. Inverter os
+ * canais de um documento colorido devolve as cores complementares, que é
+ * outra coisa e quase nunca é o que se quer — o uso real é ler um documento
+ * de fundo escuro, ou economizar toner num que veio todo preto.
+ */
+export async function invertColors(ctx: RunContext): Promise<RunResult> {
+  return redesenharComFiltro(
+    ctx,
+    filtroInverter,
+    'invertido',
+    [
+      'O documento vira preto e branco invertido: o que era escuro fica claro e o que era claro fica escuro.',
+      'As páginas viraram imagem, então o texto deixa de ser selecionável e pesquisável.',
+    ],
+  );
+}
+
+/**
+ * Tons de preto: o que é cinza vira preto.
+ *
+ * Cinza claro imprime falhado, e texto digitalizado costuma sair cinza. Aqui
+ * tudo que passa do limite vira branco e o resto vira preto puro, sem meio
+ * termo — o texto sai cheio, e não chapiscado.
+ */
+export async function blackTones(ctx: RunContext): Promise<RunResult> {
+  // Acima disto é fundo; abaixo é conteúdo. 180 de 255 deixa o cinza claro
+  // do papel digitalizado virar branco e o cinza do texto virar preto.
+  const limite = Math.max(60, Math.min(240, Number(ctx.options.limite ?? 180)));
+
+  return redesenharComFiltro(
+    ctx,
+    (dados) => filtroTonsDePreto(dados, limite),
+    'preto',
+    [
+      'Cinza virou preto puro e o fundo virou branco. Texto claro de digitalização sai cheio em vez de falhado.',
+      'Não há meio-tom: foto neste modo vira mancha. Para foto, use tons de cinza.',
+    ],
+  );
+}
+
+/**
  * Converte para tons de cinza rasterizando cada página. Isso descarta o texto
  * vetorial, então o resultado deixa de ser pesquisável — é o preço de garantir
  * que nada saia colorido na impressão.
