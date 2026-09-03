@@ -8,7 +8,7 @@
  * uma ferramenta nova mexe em `operacoes/`, e neste arquivo só numa linha.
  */
 
-import { compress, grayscale, repair } from './operacoes/otimizar';
+import { blackTones, compress, grayscale, invertColors, repair } from './operacoes/otimizar';
 import {
   applyPlan,
   blankPages,
@@ -79,6 +79,8 @@ export const OPERATIONS = {
   reverse,
   interleave,
   grayscale,
+  'invert-colors': invertColors,
+  'black-tones': blackTones,
   flatten,
   'header-footer': headerFooter,
   'set-metadata': setMetadata,
