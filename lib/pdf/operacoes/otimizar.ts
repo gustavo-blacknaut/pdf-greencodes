@@ -360,3 +360,18 @@ export async function grayscale(ctx: RunContext): Promise<RunResult> {
     notes: ['As páginas viraram imagem em tons de cinza, então o texto deixa de ser selecionável e pesquisável.'],
   };
 }
+
+/**
+ * RGB para CMYK.
+ *
+ * Não há implementação aqui: o canvas do navegador só entrega RGB, e gravar
+ * DeviceCMYK exige o motor do aplicativo. A função existe para o registro de
+ * ferramentas ficar completo e para quem chegar aqui receber a explicação, em
+ * vez de um resultado errado em silêncio. No aplicativo, `runOperation` desvia
+ * para o Python antes de chegar nesta linha.
+ */
+export async function rgbToCmyk(): Promise<RunResult> {
+  throw new Error(
+    'Converter para CMYK só funciona no aplicativo para Windows: o navegador não consegue gravar cor de separação.',
+  );
+}

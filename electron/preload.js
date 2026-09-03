@@ -20,8 +20,12 @@ contextBridge.exposeInMainWorld('greenpdf', {
   /** Abre o diálogo nativo de salvar e grava o arquivo escolhido. */
   salvarArquivo: (nome, bytes) => ipcRenderer.invoke('arquivo:salvar', { nome, bytes }),
 
-  /** Grava direto em Documentos/PDF.GreenCodes com nome numérico. */
-  salvarNumerado: (nome, bytes) => ipcRenderer.invoke('arquivo:salvar-numerado', { nome, bytes }),
+  /** Grava direto em Downloads/PDF.GreenCodes com nome numérico. */
+  salvarNumerado: (nome, bytes, apagarEm1Dia) =>
+    ipcRenderer.invoke('arquivo:salvar-numerado', { nome, bytes, apagarEm1Dia }),
+
+  /** Liga ou desliga a auto-exclusao de um arquivo ja salvo. */
+  autoExclusao: (caminho, ligado) => ipcRenderer.invoke('arquivo:auto-exclusao', { caminho, ligado }),
 
   /** Abre o arquivo no programa padrão do sistema. */
   abrir: (caminho) => ipcRenderer.invoke('arquivo:abrir', { caminho }),

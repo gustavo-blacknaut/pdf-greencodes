@@ -8,7 +8,6 @@ build/
 next-env.d.ts
 .DS_Store
 dados/
-.claude/
 dist-app/
 motor/runtime/
 impressora/impressora.exe

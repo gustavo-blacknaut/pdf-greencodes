@@ -113,3 +113,39 @@ class TestSenhaNoResultado:
     def test_arquivo_que_nao_existe_diz_o_nome(self, tmp_path):
         with pytest.raises(ErroDoUsuario, match="sumido.pdf"):
             abrir(str(tmp_path / "sumido.pdf"))
+
+
+class TestImagemEntraComoPdf:
+    """Uma foto tem que funcionar em qualquer ferramenta.
+
+    O MuPDF abre JPG como documento, mas o que sai dali nao e PDF de verdade:
+    show_pdf_page recusa com "is no PDF". Redimensionar, livreto e
+    varias-por-folha quebravam assim quando recebiam foto.
+    """
+
+    def test_abre_imagem_como_pdf_de_uma_pagina(self, criar_foto_teste):
+        doc = abrir(criar_foto_teste())
+        assert doc.is_pdf, "a imagem deveria ter virado PDF de verdade"
+        assert doc.page_count == 1
+        doc.close()
+
+    def test_redimensionar_aceita_foto(self, criar_foto_teste, rodar, tmp_path):
+        destino = str(tmp_path / "foto-a4.pdf")
+        resultado = rodar("redimensionar", [criar_foto_teste()], {"papel": "A4"}, saida=destino)
+        assert resultado["paginas"] == 1
+
+    def test_varias_por_folha_aceita_foto(self, criar_foto_teste, rodar, tmp_path):
+        destino = str(tmp_path / "grade.pdf")
+        resultado = rodar("varias-por-folha", [criar_foto_teste()], {"porFolha": 2}, saida=destino)
+        assert resultado["paginas"] == 1
+
+    def test_livreto_aceita_foto(self, criar_foto_teste, rodar, tmp_path):
+        destino = str(tmp_path / "livreto.pdf")
+        resultado = rodar("livreto", [criar_foto_teste()], saida=destino)
+        assert resultado["paginas"] >= 1
+
+    def test_arquivo_que_nao_e_imagem_nem_pdf_reclama_claro(self, tmp_path, rodar):
+        lixo = tmp_path / "lixo.pdf"
+        lixo.write_bytes(b"isso nao e um PDF nem uma imagem")
+        with pytest.raises(ErroDoUsuario):
+            abrir(str(lixo))

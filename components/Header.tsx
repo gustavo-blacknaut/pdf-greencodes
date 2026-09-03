@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { LayoutGrid, Menu, X } from 'lucide-react';
-import { CATEGORIES, TOOLS, rotaDaFerramenta } from '@/lib/tools';
+import { CATEGORIES, TOOLS_DO_SITE, rotaDaFerramenta } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { cx } from '@/lib/utils';
 
@@ -68,7 +68,7 @@ export function Header() {
         <div className="border-t bg-bg md:hidden">
           <div className="mx-auto max-w-6xl space-y-4 px-4 py-5">
             {CATEGORIES.map((category) => {
-              const items = TOOLS.filter((tool) => tool.category === category);
+              const items = TOOLS_DO_SITE.filter((tool) => tool.category === category);
               if (!items.length) return null;
               return (
                 <div key={category}>

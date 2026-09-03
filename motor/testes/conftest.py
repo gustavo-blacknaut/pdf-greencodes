@@ -71,3 +71,19 @@ def rodar():
         return resultado
 
     return executar
+
+
+@pytest.fixture
+def criar_foto_teste(tmp_path):
+    """Uma imagem de verdade em disco, para provar que foto entra nas ferramentas."""
+
+    def montar(largura=600, altura=400, nome="foto.jpg"):
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=largura, height=altura)
+        pagina.draw_rect(pagina.rect, color=(0.2, 0.5, 0.8), fill=(0.2, 0.5, 0.8))
+        caminho = str(tmp_path / nome)
+        pagina.get_pixmap(dpi=72).save(caminho)
+        doc.close()
+        return caminho
+
+    return montar

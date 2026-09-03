@@ -5,12 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   AlertTriangle,
-  ArrowDownAZ,
   ArrowLeft,
-  ArrowUpZA,
-  Copy,
-  FileText,
-  GripVertical,
   Loader2,
   Lock,
   Plus,
@@ -18,8 +13,8 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { DesbloquearArquivo } from './DesbloquearArquivo';
 import { Dropzone } from './Dropzone';
+import { FilaDeArquivos, type ArquivoNaFila } from './FilaDeArquivos';
 import { OptionField } from './OptionField';
 import { PageBoard } from './PageBoard';
 import { PdfEditor } from './PdfEditor';
@@ -27,13 +22,12 @@ import { RegistroDeProgresso, type LinhaDoRegistro } from './RegistroDeProgresso
 import { ResultPanel } from './ResultPanel';
 import { ToolIcon } from './ToolIcon';
 import { atividade } from '@/lib/atividade';
-import { vault } from '@/lib/ephemeral';
+import { DEFAULT_TTL_MS, SEM_PRAZO, vault } from '@/lib/ephemeral';
 import {
   desbloquearArquivo,
   inspectFile,
   runOperation,
   type ElementoEditor,
-  type LoadedFile,
   type PagePlanItem,
   type RunResult,
 } from '@/lib/pdf/engine';
@@ -56,24 +50,13 @@ const BOARD_HINTS: Record<BoardMode, string> = {
   rotate: 'Cada clique numa página gira 90° para a direita.',
 };
 
-type Item = {
-  id: string;
-  name: string;
-  size: number;
-  loading: boolean;
-  /** "Lendo 42%", "Abrindo o PDF" — o que está acontecendo com este arquivo. */
-  etapa?: string;
-  data?: LoadedFile;
-  error?: string;
-};
-
 type Phase = 'idle' | 'running' | 'done';
 
 let counter = 0;
 const nextId = () => `f${(counter += 1)}_${Date.now().toString(36)}`;
 
 export function ToolWorkspace({ tool }: { tool: Tool }) {
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<ArquivoNaFila[]>([]);
   const [options, setOptions] = useState(() => defaultOptions(tool));
   const [phase, setPhase] = useState<Phase>('idle');
   const [progress, setProgress] = useState({ fraction: 0, label: '' });
@@ -83,7 +66,6 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   // e o aviso de arquivo grande sumiria antes de alguém ler.
   const [aviso, setAviso] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineStatus>('cold');
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   // O que está sendo feito, linha a linha. Barra parada não diz se está lento
   // ou travado; o registro diz em que arquivo e em que página parou.
@@ -235,7 +217,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           size: file.size,
           loading: true,
           etapa: 'Abrindo o documento...',
-        } satisfies Item,
+        } satisfies ArquivoNaFila,
       }));
 
       for (const { file } of batch) marcadores.delete(file.name);
@@ -400,7 +382,9 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           });
         },
       });
-      const entry = vault.store(data.files);
+      // No aplicativo o arquivo e da pessoa e fica no disco; no site o
+      // resultado so vive na memoria da aba e precisa sair de la.
+      const entry = vault.store(data.files, estaNoAplicativo() ? SEM_PRAZO : DEFAULT_TTL_MS);
       resultIdRef.current = entry.id;
       setResult({ id: entry.id, data, elapsed: performance.now() - startedAt });
       atividade.fechar(tarefa, 'concluida', `${data.files.length} arquivo(s) gerado(s)`);
@@ -627,159 +611,22 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         )
       ) : (
         <div className="grid min-w-0 gap-5 lg:grid-cols-[1.15fr_1fr] lg:items-start">
-          {/* Arquivos */}
-          <div className="card min-w-0 p-4 sm:p-5">
-            <div className="mb-3 flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold tracking-tight">
-                {items.length} arquivo{items.length > 1 ? 's' : ''}
-              </h2>
-              <p className="text-xs tabular-nums text-muted">
-                {formatBytes(totalBytes)}
-                {totalPages > 0 ? ` · ${totalPages} páginas` : ''}
-              </p>
-            </div>
-
-            {tool.orderable && items.length > 1 && (
-              <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-muted">Ordenar:</span>
-                <button type="button" onClick={() => sortByName('asc')} className="btn-ghost px-2.5 py-1 text-xs">
-                  <ArrowDownAZ className="h-3.5 w-3.5" /> A a Z
-                </button>
-                <button type="button" onClick={() => sortByName('desc')} className="btn-ghost px-2.5 py-1 text-xs">
-                  <ArrowUpZA className="h-3.5 w-3.5" /> Z a A
-                </button>
-              </div>
-            )}
-
-            <ul className="space-y-2">
-              {items.map((item, index) => (
-                <li
-                  key={item.id}
-                  draggable={tool.orderable && items.length > 1}
-                  onDragStart={() => setDragIndex(index)}
-                  onDragEnd={() => setDragIndex(null)}
-                  onDragOver={(event) => {
-                    if (dragIndex === null || dragIndex === index) return;
-                    event.preventDefault();
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (dragIndex !== null && dragIndex !== index) move(dragIndex, index);
-                    setDragIndex(null);
-                  }}
-                  className={cx(
-                    'rounded-xl border p-2.5 transition',
-                    dragIndex === index ? 'opacity-40' : 'hover:border-brand/40',
-                    item.error &&
-                      (item.data?.locked
-                        ? 'border-amber-500/40 bg-amber-500/5'
-                        : 'border-rose-500/40 bg-rose-500/5'),
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                  {tool.orderable && items.length > 1 && (
-                    <span className="cursor-grab text-muted active:cursor-grabbing" aria-hidden>
-                      <GripVertical className="h-4 w-4" />
-                    </span>
-                  )}
-
-                  <span className="grid h-14 w-11 shrink-0 place-items-center overflow-hidden rounded-lg border bg-elevated">
-                    {item.loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted" />
-                    ) : item.data?.thumbnail ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.data.thumbnail} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <FileText className="h-4 w-4 text-muted" />
-                    )}
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{item.name}</p>
-                    <p className="truncate text-xs text-muted">
-                      {item.error
-                        ? item.error
-                        : item.loading
-                          ? (item.etapa ?? 'Lendo...')
-                          : `${formatBytes(item.size)}${item.data?.pageCount ? ` · ${item.data.pageCount} páginas` : ''}`}
-                    </p>
-                  </div>
-
-                  {tool.orderable && items.length > 1 && (
-                    <span className="hidden shrink-0 gap-1 sm:flex">
-                      <button
-                        type="button"
-                        onClick={() => move(index, index - 1)}
-                        disabled={index === 0}
-                        className="rounded-md px-1.5 text-muted transition hover:text-ink disabled:opacity-30"
-                        aria-label="Mover para cima"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => move(index, index + 1)}
-                        disabled={index === items.length - 1}
-                        className="rounded-md px-1.5 text-muted transition hover:text-ink disabled:opacity-30"
-                        aria-label="Mover para baixo"
-                      >
-                        ↓
-                      </button>
-                    </span>
-                  )}
-
-                  {tool.multiple && !item.loading && item.data && (
-                    <button
-                      type="button"
-                      onClick={() => duplicarItem(item.id)}
-                      className="shrink-0 rounded-lg p-1.5 text-muted transition hover:text-ink"
-                      title="Repetir este arquivo na fila"
-                      aria-label={`Duplicar ${item.name}`}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeItem(item.id)}
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-rose-500/10 hover:text-rose-500"
-                    aria-label={`Remover ${item.name}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                  </div>
-
-                  {item.data?.locked && (
-                    <DesbloquearArquivo
-                      nomeDoArquivo={item.name}
-                      onDesbloquear={(senha) => destravar(item.id, senha)}
-                    />
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {tool.multiple && (
-              <div className="mt-3">
-                <Dropzone
-                  accept={tool.accept}
-                  onEscolhidos={mostrarEscolhidos}
-                  onLendo={marcarLeitura}
-                  onFalha={descartarMarcadores}
-                  acceptLabel={tool.acceptLabel}
-                  multiple
-                  compact
-                  onFiles={addFiles}
-                />
-              </div>
-            )}
-
-            {!tool.multiple && (
-              <button type="button" onClick={reset} className="btn-ghost mt-3 w-full">
-                <Plus className="h-4 w-4" /> Trocar arquivo
-              </button>
-            )}
-          </div>
+          <FilaDeArquivos
+            tool={tool}
+            items={items}
+            totalBytes={totalBytes}
+            totalPages={totalPages}
+            onOrdenar={sortByName}
+            onMover={move}
+            onDuplicar={duplicarItem}
+            onRemover={removeItem}
+            onDestravar={destravar}
+            onTrocarArquivo={reset}
+            onFiles={addFiles}
+            onEscolhidos={mostrarEscolhidos}
+            onLendo={marcarLeitura}
+            onFalha={descartarMarcadores}
+          />
 
           {/* Opções + ação */}
           <div className="card min-w-0 space-y-5 p-4 sm:p-5 lg:sticky lg:top-24">

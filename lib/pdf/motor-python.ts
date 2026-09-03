@@ -85,6 +85,16 @@ const NO_PYTHON: Record<string, Traducao> = {
     }),
   },
 
+  'rgb-to-cmyk': {
+    acao: 'rgb-para-cmyk',
+    rotulo: 'Separando a cor',
+    opcoes: (o) => ({
+      preto: String(o.preto ?? 'rico'),
+      ajustarPreto: o.ajustarPreto !== false,
+      marcarDevice: o.marcarDevice !== false,
+    }),
+  },
+
   'pdf-to-images': {
     acao: 'pdf-para-imagem',
     rotulo: 'Desenhando as páginas',

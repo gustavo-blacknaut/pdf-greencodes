@@ -13,6 +13,17 @@ import type { OutputFile } from './pdf/engine';
 
 export const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * Sem prazo, para o aplicativo.
+ *
+ * O prazo existe por causa do site: ali o resultado só mora na memória da aba,
+ * e segurar dezenas de megabytes para sempre acabaria com a memória do
+ * navegador. No aplicativo o arquivo é gravado em disco e é da pessoa — apagar
+ * da memória depois de dez minutos só fazia os botões de abrir e salvar
+ * pararem de funcionar sozinhos, sem motivo nenhum.
+ */
+export const SEM_PRAZO = Number.POSITIVE_INFINITY;
+
 export type VaultEntry = {
   id: string;
   files: OutputFile[];
@@ -57,10 +68,14 @@ class EphemeralVault {
       purged: false,
     };
     this.entries.set(id, entry);
-    this.timers.set(
-      id,
-      setTimeout(() => this.purge(id, 'expirou'), ttlMs),
-    );
+    // `setTimeout` com Infinity dispara na hora (o valor estoura o inteiro de
+    // 32 bits e vira zero), então o caso sem prazo não agenda nada.
+    if (Number.isFinite(ttlMs)) {
+      this.timers.set(
+        id,
+        setTimeout(() => this.purge(id, 'expirou'), ttlMs),
+      );
+    }
     this.emit();
     return entry;
   }

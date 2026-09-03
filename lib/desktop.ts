@@ -20,7 +20,8 @@ type Ponte = {
   versao: () => Promise<string>;
   salvarArquivo: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
   salvarVarios: (arquivos: { nome: string; bytes: ArrayBuffer }[]) => Promise<ResultadoSalvarVarios>;
-  salvarNumerado: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
+  salvarNumerado: (nome: string, bytes: ArrayBuffer, apagarEm1Dia?: boolean) => Promise<ResultadoSalvar>;
+  autoExclusao: (caminho: string, ligado: boolean) => Promise<ResultadoSalvar>;
   abrir: (caminho: string) => Promise<ResultadoSalvar>;
   abrirAqui: (caminho: string) => Promise<ResultadoSalvar>;
   abrirNoNavegador: (caminho: string) => Promise<ResultadoSalvar>;
@@ -127,13 +128,26 @@ export async function salvarArquivo(nome: string, blob: Blob): Promise<Resultado
 }
 
 /**
- * Grava em Documentos/PDF.GreenCodes com o primeiro número livre: 1.pdf,
+ * Grava em Downloads/PDF.GreenCodes com o primeiro número livre: 1.pdf,
  * 2.pdf, 3.pdf. Sem diálogo e sem sobrescrever nada.
+ *
+ * `apagarEm1Dia` marca o arquivo para se apagar sozinho depois de 24 horas.
+ * É opcional e por arquivo: o que não for marcado fica para sempre, porque é
+ * arquivo da pessoa, no computador dela.
  */
-export async function salvarNumerado(nome: string, blob: Blob): Promise<ResultadoSalvar> {
+export async function salvarNumerado(
+  nome: string,
+  blob: Blob,
+  apagarEm1Dia = false,
+): Promise<ResultadoSalvar> {
   const api = ponte();
   if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
-  return api.salvarNumerado(nome, await blob.arrayBuffer());
+  return api.salvarNumerado(nome, await blob.arrayBuffer(), apagarEm1Dia);
+}
+
+/** Liga ou desliga a auto-exclusão de um arquivo que já foi salvo. */
+export async function definirAutoExclusao(caminho: string, ligado: boolean): Promise<boolean> {
+  return Boolean((await ponte()?.autoExclusao(caminho, ligado))?.ok);
 }
 
 /** Abre numa janela do próprio programa. */

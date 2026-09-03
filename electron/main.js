@@ -11,6 +11,7 @@ const { spawn } = require('node:child_process');
 const integracao = require('./integracao-windows');
 const impressao = require('./impressao');
 const { Motor } = require('./motor');
+const { Resultados } = require('./resultados');
 
 /**
  * Onde moram o Python e o programa de impressão.
@@ -23,6 +24,11 @@ const RAIZ_DOS_MOTORES = app.isPackaged
   : path.join(__dirname, '..');
 
 const motor = new Motor(RAIZ_DOS_MOTORES);
+
+// Downloads porque e onde a pessoa ja procura arquivo baixado; a subpasta
+// porque a auto-exclusao varre por tempo, e varrer a raiz de Downloads seria
+// apagar coisa que nao e nossa.
+let resultados = null;
 
 /**
  * PDF.GreenCodes para desktop.
@@ -411,8 +417,7 @@ function registrarCanais() {
    */
   ipcMain.handle('arquivo:pasta-resultados', async () => {
     try {
-      const pasta = path.join(app.getPath('documents'), 'PDF.GreenCodes');
-      await fsp.mkdir(pasta, { recursive: true });
+      const pasta = await resultados.garantirPasta();
       await shell.openPath(pasta);
       return { ok: true, caminho: pasta };
     } catch (erro) {
@@ -457,23 +462,26 @@ function registrarCanais() {
    * disco e pronto. O número é o primeiro livre da pasta: 1.pdf, 2.pdf, e por
    * aí. Nunca sobrescreve nada.
    */
-  ipcMain.handle('arquivo:salvar-numerado', async (_evento, { nome, bytes }) => {
+  ipcMain.handle('arquivo:salvar-numerado', async (_evento, { nome, bytes, apagarEm1Dia }) => {
     if (typeof nome !== 'string' || !(bytes instanceof ArrayBuffer)) {
       return { ok: false, erro: 'Pedido inválido.' };
     }
 
     try {
-      const pasta = path.join(app.getPath('documents'), 'PDF.GreenCodes');
-      await fsp.mkdir(pasta, { recursive: true });
+      const caminho = await resultados.salvar(nome, bytes, { apagarEm1Dia: apagarEm1Dia === true });
+      return { ok: true, caminho };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
+  });
 
-      const extensao = path.extname(nome) || '.pdf';
-      const existentes = new Set(await fsp.readdir(pasta));
-      let numero = 1;
-      while (existentes.has(numero + extensao)) numero += 1;
-
-      const destino = path.join(pasta, numero + extensao);
-      await fsp.writeFile(destino, Buffer.from(bytes));
-      return { ok: true, caminho: destino };
+  /** Liga ou desliga a auto-exclusão de um arquivo que já foi salvo. */
+  ipcMain.handle('arquivo:auto-exclusao', async (_evento, { caminho, ligado }) => {
+    if (typeof caminho !== 'string') return { ok: false, erro: 'Pedido inválido.' };
+    try {
+      if (ligado) await resultados.marcarParaApagar(caminho);
+      else await resultados.manterParaSempre(caminho);
+      return { ok: true, caminho };
     } catch (erro) {
       return { ok: false, erro: erro.message };
     }
@@ -743,6 +751,10 @@ if (!app.requestSingleInstanceLock()) {
       app.quit();
       return;
     }
+
+    // Só dá para perguntar as pastas do sistema depois que o app está pronto.
+    resultados = new Resultados(app.getPath('downloads'), app.getPath('userData'));
+    resultados.iniciarVarredura();
 
     registrarCanais();
     montarMenu();

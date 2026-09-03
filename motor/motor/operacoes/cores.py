@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List
 import pymupdf
 
 from ..documento import abrir, nome_com_sufixo, salvar
+from ..resolucao import aviso_de_reducao, couber, na_faixa
 from ..tinta import TINTAS, cmyk_do_cinza, fixar_devicecmyk
 from ..protocolo import ErroDoUsuario, Pedido
 
@@ -95,19 +96,27 @@ def _redesenhar(
     if not pedido.arquivos:
         raise ErroDoUsuario("nenhum arquivo escolhido")
 
-    dpi = max(DPI_MINIMO, min(DPI_MAXIMO, int(pedido.opcao("dpi", DPI_PADRAO))))
+    dpi = na_faixa(pedido.opcao("dpi", DPI_PADRAO), DPI_PADRAO)
     origem = pedido.arquivos[0]
     senha = pedido.senha(0)
 
     entrada = abrir(origem, senha)
     saida = pymupdf.open()
+    reduziu: tuple[int, int] | None = None
     try:
         total = entrada.page_count
         for indice in range(total):
             pedido.andamento(indice / total, f"Pagina {indice + 1} de {total}")
 
             pagina = entrada[indice]
-            pixels = transformar(pagina.get_pixmap(dpi=dpi))
+
+            # A trava e por pagina: um documento pode misturar A4 e A0, e o
+            # que cabe numa nao cabe na outra.
+            usado, baixou = couber(pagina.rect.width, pagina.rect.height, dpi, 4 if cmyk else 3)
+            if baixou and not reduziu:
+                reduziu = (dpi, usado)
+
+            pixels = transformar(pagina.get_pixmap(dpi=usado))
 
             nova = saida.new_page(width=pagina.rect.width, height=pagina.rect.height)
             nova.insert_image(nova.rect, pixmap=pixels)
@@ -125,7 +134,10 @@ def _redesenhar(
         bytes_saida = salvar(saida, destino, senha)
 
         pedido.andamento(1.0)
-        return {"arquivo": destino, "paginas": total, "bytes": bytes_saida, "notas": notas}
+        recados = list(notas)
+        if reduziu:
+            recados.insert(0, aviso_de_reducao(*reduziu))
+        return {"arquivo": destino, "paginas": total, "bytes": bytes_saida, "notas": recados}
     finally:
         saida.close()
         entrada.close()

@@ -16,7 +16,7 @@
     "tamanho": "node scripts/verificar-tamanho.js",
     "verificar": "npm run tamanho && npm run typecheck && npm run test",
     "impressora": "node scripts/compilar-impressora.js",
-    "motor": "motor/runtime/python.exe -m pytest motor/testes -q"
+    "motor": "motor\\runtime\\python.exe -m pytest motor/testes -q"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",

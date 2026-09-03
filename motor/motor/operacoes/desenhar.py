@@ -12,6 +12,7 @@ from typing import Any, Dict
 
 import pymupdf
 
+from ..resolucao import couber, na_faixa
 from ..documento import abrir, faixa_de_paginas
 from ..protocolo import ErroDoUsuario, Pedido
 
@@ -36,7 +37,7 @@ def desenhar(pedido: Pedido) -> Dict[str, Any]:
         raise ErroDoUsuario("faltou dizer em que pasta gravar as imagens")
     os.makedirs(destino, exist_ok=True)
 
-    dpi = max(DPI_MINIMO, min(DPI_MAXIMO, int(pedido.opcao("dpi", 150))))
+    dpi = na_faixa(pedido.opcao("dpi", 150), 150)
     formato = str(pedido.opcao("formato", "jpeg")).lower()
     qualidade = max(30, min(100, int(pedido.opcao("qualidade", 82))))
     cinza = bool(pedido.opcao("cinza", False))
@@ -51,7 +52,8 @@ def desenhar(pedido: Pedido) -> Dict[str, Any]:
             pedido.andamento(posicao / len(escolhidas), f"Pagina {posicao + 1} de {len(escolhidas)}")
 
             pagina = doc[indice]
-            pixels = pagina.get_pixmap(dpi=dpi, colorspace=espaco)
+            usado, _ = couber(pagina.rect.width, pagina.rect.height, dpi, 1 if cinza else 3)
+            pixels = pagina.get_pixmap(dpi=usado, colorspace=espaco)
             arquivo = os.path.join(destino, f"p{indice + 1:05d}.{'jpg' if formato == 'jpeg' else 'png'}")
 
             if formato == "jpeg":

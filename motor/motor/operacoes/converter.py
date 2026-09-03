@@ -13,6 +13,7 @@ from typing import Any, Dict
 import pymupdf
 
 from ..documento import abrir, faixa_de_paginas, nome_com_sufixo, salvar
+from ..resolucao import couber, na_faixa
 from ..protocolo import ErroDoUsuario, Pedido
 
 DPI_PADRAO = 200
@@ -34,7 +35,7 @@ def pdf_para_imagem(pedido: Pedido) -> Dict[str, Any]:
     senha = pedido.senha(0)
     formato = str(pedido.opcao("formato", "jpeg")).lower()
     qualidade = max(30, min(100, int(pedido.opcao("qualidade", 90))))
-    dpi = max(DPI_MINIMO, min(DPI_MAXIMO, int(pedido.opcao("dpi", DPI_PADRAO))))
+    dpi = na_faixa(pedido.opcao("dpi", DPI_PADRAO), DPI_PADRAO)
     extensao = "jpg" if formato == "jpeg" else "png"
 
     doc = abrir(origem, senha)
@@ -49,7 +50,9 @@ def pdf_para_imagem(pedido: Pedido) -> Dict[str, Any]:
         for posicao, indice in enumerate(escolhidas):
             pedido.andamento(posicao / len(escolhidas), f"Página {posicao + 1} de {len(escolhidas)}")
 
-            pixels = doc[indice].get_pixmap(dpi=dpi)
+            caixa = doc[indice].rect
+            usado, _ = couber(caixa.width, caixa.height, dpi)
+            pixels = doc[indice].get_pixmap(dpi=usado)
             destino = os.path.join(pasta, f"pagina-{indice + 1:03d}.{extensao}")
 
             if formato == "jpeg":

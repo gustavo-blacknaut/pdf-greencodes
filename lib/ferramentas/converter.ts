@@ -57,7 +57,7 @@ export const CONVERTER: Tool[] = [
           { value: 'png', label: 'PNG', hint: 'sem perda, arquivos maiores' },
         ],
       },
-      { key: 'dpi', type: 'range', label: 'Resolução', default: 150, min: 72, max: 300, step: 6, unit: 'DPI' },
+      { key: 'dpi', type: 'range', label: 'Resolução', default: 150, min: 72, max: 1200, step: 6, unit: 'DPI' },
       {
         key: 'quality',
         type: 'range',

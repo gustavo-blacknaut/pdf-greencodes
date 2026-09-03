@@ -55,6 +55,7 @@ const ORDEM = [
   'pdf-tons-de-cinza',
   'inverter-cor',
   'pdf-tons-de-preto',
+  'rgb-para-cmyk',
   'achatar-pdf',
   'cabecalho-rodape',
   'dividir-paginas',
@@ -72,6 +73,11 @@ export const TOOLS: Tool[] = [...CATALOGO].sort(
   (a, b) =>
     (ORDEM.indexOf(a.slug) + 1 || ORDEM.length + 1) - (ORDEM.indexOf(b.slug) + 1 || ORDEM.length + 1),
 );
+
+/**
+ * As que o site mostra: tudo menos o que só funciona no aplicativo.
+ */
+export const TOOLS_DO_SITE: Tool[] = TOOLS.filter((tool) => !tool.soNoAplicativo);
 
 export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Privacidade'] as const;
 

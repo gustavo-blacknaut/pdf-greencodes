@@ -38,6 +38,7 @@ const ORDEM_ESPERADA = [
   'pdf-tons-de-cinza',
   'inverter-cor',
   'pdf-tons-de-preto',
+  'rgb-para-cmyk',
   'achatar-pdf',
   'cabecalho-rodape',
   'dividir-paginas',

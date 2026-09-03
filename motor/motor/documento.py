@@ -37,7 +37,13 @@ def variantes(senha: str) -> list[str]:
 
 
 def abrir(caminho: str, senha: str = "") -> pymupdf.Document:
-    """Abre o PDF, destrancando se precisar.
+    """Abre o arquivo como PDF, destrancando e convertendo se precisar.
+
+    Imagem entra como PDF de uma pagina. O MuPDF abre JPG e PNG como
+    documento, mas o que sai dali nao e um PDF de verdade: `show_pdf_page`
+    recusa com "is no PDF", e era esse o erro que redimensionar, livreto e
+    varias-por-folha davam quando recebiam uma foto. Converter aqui resolve
+    para todas as operacoes de uma vez, em vez de cada uma se defender.
 
     Devolve o documento ainda com a criptografia original registrada, para que
     `salvar` saiba que tem senha a preservar.
@@ -49,6 +55,17 @@ def abrir(caminho: str, senha: str = "") -> pymupdf.Document:
         doc = pymupdf.open(caminho)
     except Exception as erro:  # noqa: BLE001
         raise ErroDoUsuario(f"nao consegui ler {os.path.basename(caminho)}: {erro}") from erro
+
+    if not doc.is_pdf:
+        try:
+            convertido = pymupdf.open("pdf", doc.convert_to_pdf())
+        except Exception as erro:  # noqa: BLE001
+            doc.close()
+            raise ErroDoUsuario(
+                f"{os.path.basename(caminho)} nao e PDF e nao consegui converter: {erro}"
+            ) from erro
+        doc.close()
+        return convertido
 
     if not doc.needs_pass:
         return doc

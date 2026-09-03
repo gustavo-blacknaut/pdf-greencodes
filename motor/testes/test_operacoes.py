@@ -240,8 +240,11 @@ class TestDesenhar:
         assert alto["imagens"][0]["largura"] == pytest.approx(baixo["imagens"][0]["largura"] * 2, abs=2)
 
     def test_dpi_absurdo_e_limitado(self, criar_pdf, rodar, tmp_path):
+        # O teto subiu para 1200 quando o aplicativo passou a oferecer as
+        # impressoras de 600 e 1200 DPI. Acima disso não há impressora, e o
+        # arquivo só cresceria.
         resultado = rodar("desenhar", [criar_pdf(paginas=1)], {"dpi": 5000}, saida=str(tmp_path / "c"))
-        assert resultado["dpi"] == 300
+        assert resultado["dpi"] == 1200
 
     def test_sem_pasta_de_saida_reclama(self, criar_pdf, rodar):
         with pytest.raises(ErroDoUsuario, match="em que pasta"):
