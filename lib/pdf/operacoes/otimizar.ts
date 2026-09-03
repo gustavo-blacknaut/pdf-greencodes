@@ -283,11 +283,30 @@ export async function blackTones(ctx: RunContext): Promise<RunResult> {
     ctx,
     (dados) => filtroTonsDePreto(dados, limite),
     'preto',
-    [
-      'Cinza virou preto puro e o fundo virou branco. Texto claro de digitalização sai cheio em vez de falhado.',
-      'Não há meio-tom: foto neste modo vira mancha. Para foto, use tons de cinza.',
-    ],
+    notasDoTonsDePreto(String(ctx.options.tinta ?? 'rgb')),
   );
+}
+
+/**
+ * O que o resultado avisa, conforme a tinta pedida.
+ *
+ * Gravar DeviceCMYK exige o motor do aplicativo: aqui, no navegador, o canvas
+ * só entrega RGB. Quem pediu K100 e recebeu preto comum precisa saber disso —
+ * entregar quadricromia achando que é chapa preta é o tipo de erro que só
+ * aparece na hora da impressão, com o trabalho já rodando.
+ */
+export function notasDoTonsDePreto(tinta: string): string[] {
+  const comuns = [
+    'Cinza virou preto puro e o fundo virou branco. Texto claro de digitalização sai cheio em vez de falhado.',
+    'Não há meio-tom: foto neste modo vira mancha. Para foto, use tons de cinza.',
+  ];
+
+  if (tinta !== 'k100' && tinta !== 'rico') return comuns;
+
+  return [
+    'O preto saiu em RGB comum, não em CMYK: gravar K100 ou preto rico só é possível no aplicativo para Windows, onde o motor grava DeviceCMYK de verdade.',
+    ...comuns,
+  ];
 }
 
 /**
