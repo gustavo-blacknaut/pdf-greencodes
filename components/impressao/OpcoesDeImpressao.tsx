@@ -91,11 +91,11 @@ export function OpcoesDeImpressao({
             className="btn-ghost mt-2 w-full justify-start px-3 py-2 text-[13px] disabled:opacity-40"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            Tipo e espessura do papel...
+            Mais configurações da impressora...
           </button>
           <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-            Papel grosso, fotográfico ou etiqueta ficam na janela do driver. O que você marcar lá vale para as
-            impressões feitas aqui.
+            Abre a janela do fabricante da impressora, onde ficam tipo e espessura do papel, padrão fino ou grosso e
+            melhor qualidade. O que você marcar lá vale para as próximas impressões daqui.
           </p>
 
         <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-xl border border-line bg-bg/40 p-3">

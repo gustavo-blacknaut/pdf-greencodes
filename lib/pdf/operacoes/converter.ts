@@ -347,9 +347,13 @@ export async function lerParagrafosDocx(bytes: ArrayBuffer): Promise<ParagrafoDo
 export async function pdfDeParagrafos(
   paragrafos: ParagrafoDocx[],
   tamanhoFonte: number,
+  deitada = false,
 ): Promise<{ doc: PdfDoc; algumTexto: boolean }> {
   const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
-  const [largura, altura] = PAGE_SIZES.a4;
+  // Slide é deitado; documento de texto é em pé. Sem isto a apresentação
+  // saía num formato que ela nunca teve.
+  const [curto, longo] = PAGE_SIZES.a4;
+  const [largura, altura] = deitada ? [longo, curto] : [curto, longo];
   const margem = 56.7; // 20 mm
   const alturaLinha = tamanhoFonte * 1.4;
   const larguraUtil = largura - margem * 2;
@@ -608,7 +612,8 @@ export async function powerpointToPdf(ctx: RunContext): Promise<RunResult> {
       await respirar(ctx);
     }
 
-    const { doc } = await pdfDeParagrafos(paragrafos, 11);
+    // Apresentação é deitada, como o slide na tela.
+    const { doc } = await pdfDeParagrafos(paragrafos, 11, true);
     const blob = toPdfBlob(await doc.save({ useObjectStreams: true }));
     outputBytes += blob.size;
     outputs.push({ name: replaceExtension(source.name, 'pdf'), blob, pages: doc.getPageCount() });

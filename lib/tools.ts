@@ -53,6 +53,8 @@ const ORDEM = [
   'inverter-paginas',
   'intercalar-pdf',
   'pdf-tons-de-cinza',
+  'inverter-cor',
+  'pdf-tons-de-preto',
   'achatar-pdf',
   'cabecalho-rodape',
   'dividir-paginas',
