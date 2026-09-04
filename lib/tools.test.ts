@@ -24,7 +24,18 @@ describe('registro de ferramentas', () => {
     for (const tool of TOOLS) {
       expect(tool.name, tool.slug).toBeTruthy();
       expect(tool.cta, tool.slug).toBeTruthy();
-      expect(tool.accept.length, tool.slug).toBeGreaterThan(0);
+      // Ferramenta sem arquivo tira a entrada dos campos, então não declara
+      // o que aceita — mas aí precisa ter campo, senão não recebe nada.
+      if (tool.semArquivo) expect(tool.fields.length, tool.slug).toBeGreaterThan(0);
+      else expect(tool.accept.length, tool.slug).toBeGreaterThan(0);
+    }
+  });
+
+  it('ferramenta sem arquivo não pede vários nem grade de páginas', () => {
+    for (const tool of TOOLS.filter((t) => t.semArquivo)) {
+      expect(tool.multiple, `${tool.slug} não recebe arquivo, então não recebe vários`).toBe(false);
+      expect(tool.board, tool.slug).toBeUndefined();
+      expect(tool.editor, tool.slug).toBeUndefined();
     }
   });
 

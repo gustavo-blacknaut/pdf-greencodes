@@ -24,6 +24,7 @@ import {
   type FormatoDeSaida,
   type Medida,
 } from '../../imagem/medidas';
+import { realcar, recortar, redimensionar, type Bitmap } from '../../imagem/lanczos';
 import { canvasToBlob, zipFiles } from '../nucleo';
 import type { OutputFile, RunContext, RunResult } from '../tipos';
 import { replaceExtension, yieldToBrowser } from '../../utils';
@@ -313,4 +314,180 @@ export async function heicToImage(ctx: RunContext): Promise<RunResult> {
     `HEIC convertido para ${FORMATOS_DE_SAIDA[formato].extensao.toUpperCase()}, no tamanho original.`,
     'O HEIC é o formato que o iPhone grava desde 2017. Nem o navegador nem a maioria dos programas abrem — por isso a conversão.',
   ]);
+}
+
+// ------------------------------------------------- ampliar e recortar ---
+
+/**
+ * Teto de pixels na saída.
+ *
+ * Uma foto de 4000x3000 ampliada quatro vezes vira 192 milhões de pixels, e
+ * cada um ocupa quatro bytes: 768 MB só do resultado, sem contar a passagem
+ * intermediária. Nas máquinas da loja isso não é lentidão, é a aba morrendo.
+ */
+const MAX_PIXELS = 40_000_000;
+
+/** Do bitmap do navegador para os pixels crus, e de volta. */
+async function pixelsDe(imagem: Decodificada): Promise<Bitmap> {
+  const canvas = document.createElement('canvas');
+  canvas.width = imagem.largura;
+  canvas.height = imagem.altura;
+  const pincel = canvas.getContext('2d', { willReadFrequently: true });
+  if (!pincel) throw new Error('O navegador não deixou ler os pixels da imagem.');
+  pincel.drawImage(imagem.bitmap, 0, 0);
+  const dados = pincel.getImageData(0, 0, imagem.largura, imagem.altura);
+  return { dados: dados.data, largura: imagem.largura, altura: imagem.altura };
+}
+
+async function gravarPixels(mapa: Bitmap, formato: FormatoDeSaida, qualidade: number): Promise<Blob> {
+  const canvas = document.createElement('canvas');
+  canvas.width = mapa.largura;
+  canvas.height = mapa.altura;
+  const pincel = canvas.getContext('2d');
+  if (!pincel) throw new Error('O navegador não deixou desenhar a imagem.');
+
+  // Monta o ImageData pelo contexto, e não pelo construtor: assim o array
+  // de pixels entra sem depender de qual versão do lib do TypeScript está
+  // tipando o construtor.
+  const quadro = pincel.createImageData(mapa.largura, mapa.altura);
+  quadro.data.set(mapa.dados);
+
+  if (FORMATOS_DE_SAIDA[formato].temTransparencia) {
+    pincel.putImageData(quadro, 0, 0);
+    const alvoTransparente = FORMATOS_DE_SAIDA[formato];
+    return canvasToBlob(canvas, alvoTransparente.mime, alvoTransparente.temQualidade ? qualidade : undefined);
+  }
+
+  // Sem transparência: o branco vai por baixo, senão o que era transparente
+  // sai preto. putImageData ignora o que já está desenhado, então os pixels
+  // passam por um canvas intermediário e voltam com drawImage.
+  const porBaixo = document.createElement('canvas');
+  porBaixo.width = mapa.largura;
+  porBaixo.height = mapa.altura;
+  porBaixo.getContext('2d')!.putImageData(quadro, 0, 0);
+
+  pincel.fillStyle = '#ffffff';
+  pincel.fillRect(0, 0, canvas.width, canvas.height);
+  pincel.drawImage(porBaixo, 0, 0);
+
+  const alvo = FORMATOS_DE_SAIDA[formato];
+  return canvasToBlob(canvas, alvo.mime, alvo.temQualidade ? qualidade : undefined);
+}
+
+/**
+ * Amplia com Lanczos e realça a borda.
+ *
+ * O `drawImage` do canvas interpola em bilinear, que é rápida e mole. O
+ * Lanczos pesa uma janela maior com lóbulos negativos, e é isso que devolve
+ * borda definida em vez de borrão.
+ *
+ * O que ele **não** faz é inventar detalhe: o detalhe não está no arquivo.
+ * Quem promete "melhorar" uma foto de 300 px para um banner está falando de
+ * um modelo de IA, que é outra conversa e outros oitenta megabytes.
+ */
+export async function enhanceImage(ctx: RunContext): Promise<RunResult> {
+  const formato = formatoValido(ctx.options.formato ?? 'png');
+  const qualidade = Math.min(1, Math.max(0.3, Number(ctx.options.qualidade ?? 95) / 100));
+  const escala = Math.min(8, Math.max(1, Number(ctx.options.escala ?? 2)));
+  const nitidez = Math.min(2, Math.max(0, Number(ctx.options.nitidez ?? 0.6)));
+
+  let reduziu = false;
+
+  const saidas = await porArquivo(ctx, async (imagem, arquivo) => {
+    let alvoL = Math.round(imagem.largura * escala);
+    let alvoA = Math.round(imagem.altura * escala);
+
+    if (alvoL * alvoA > MAX_PIXELS) {
+      const fator = Math.sqrt(MAX_PIXELS / (alvoL * alvoA));
+      alvoL = Math.round(alvoL * fator);
+      alvoA = Math.round(alvoA * fator);
+      reduziu = true;
+    }
+
+    const origem = await pixelsDe(imagem);
+    const ampliada = redimensionar(origem, alvoL, alvoA);
+    const pronta = realcar(ampliada, nitidez);
+
+    return { name: nomeNoFormato(arquivo.name, formato), blob: await gravarPixels(pronta, formato, qualidade) };
+  });
+
+  const notas = [
+    `Ampliadas ${escala}x com Lanczos, e realçadas em ${Math.round(nitidez * 100)}%.`,
+    'Ampliar não cria detalhe que não está no arquivo: o Lanczos entrega a borda mais definida que ' +
+      'a matemática permite, e o realce aumenta o contraste dela. Uma foto de 300 px não vira um banner.',
+  ];
+  if (reduziu) {
+    notas.push(
+      'Alguma ampliação passaria de 40 milhões de pixels e foi limitada — acima disso a memória do navegador não aguenta.',
+    );
+  }
+  if (formato === 'jpeg') {
+    notas.push('Salvar em PNG evita perder no JPG justamente o que a ampliação acabou de ganhar.');
+  }
+
+  return entregar(ctx, saidas, 'imagens-ampliadas', notas);
+}
+
+/**
+ * Recorta sem a perda que o Paint cobra.
+ *
+ * Copiar um pedaço é exato — nenhum pixel é interpolado. A perda que aparece
+ * ao recortar no Paint não vem do corte: vem de gravar de novo em JPEG, que
+ * recomprime a imagem inteira e cobra o preço em cima do que já tinha sido
+ * cobrado quando a foto foi tirada. Por isso o padrão aqui é PNG, que é sem
+ * perda; quem escolher JPG recebe o aviso.
+ */
+export async function cropImage(ctx: RunContext): Promise<RunResult> {
+  const formato = formatoValido(ctx.options.formato ?? 'png');
+  const qualidade = Math.min(1, Math.max(0.3, Number(ctx.options.qualidade ?? 95) / 100));
+  const modo = String(ctx.options.modo ?? 'margens');
+
+  const pct = (chave: string, padrao: number) => Math.min(45, Math.max(0, Number(ctx.options[chave] ?? padrao))) / 100;
+  const [esquerda, direita, topo, base] = [
+    pct('esquerda', 0),
+    pct('direita', 0),
+    pct('topo', 0),
+    pct('base', 0),
+  ];
+  const proporcao = String(ctx.options.proporcao ?? '3x4');
+
+  const saidas = await porArquivo(ctx, async (imagem, arquivo) => {
+    const origem = await pixelsDe(imagem);
+    let pedaco;
+
+    if (modo === 'proporcao') {
+      const [pl, pa] = proporcao.split('x').map(Number);
+      const alvo = pl / pa;
+      const atual = origem.largura / origem.altura;
+      // Aparar pelo centro: o assunto da foto quase sempre está no meio.
+      const largura = atual > alvo ? origem.altura * alvo : origem.largura;
+      const altura = atual > alvo ? origem.altura : origem.largura / alvo;
+      pedaco = recortar(origem, (origem.largura - largura) / 2, (origem.altura - altura) / 2, largura, altura);
+    } else {
+      pedaco = recortar(
+        origem,
+        origem.largura * esquerda,
+        origem.altura * topo,
+        origem.largura * (1 - esquerda - direita),
+        origem.altura * (1 - topo - base),
+      );
+    }
+
+    return { name: nomeNoFormato(arquivo.name, formato), blob: await gravarPixels(pedaco, formato, qualidade) };
+  });
+
+  const notas =
+    modo === 'proporcao'
+      ? [`Aparadas pelo centro até a proporção ${proporcao.replace('x', ':')}.`]
+      : ['Aparadas pelas margens que você informou.'];
+
+  notas.push(
+    'O corte em si não perde nada: é cópia de pixel, sem interpolação. A perda que aparece no Paint ' +
+      'vem de gravar de novo em JPEG, que recomprime a imagem inteira.',
+  );
+  if (formato === 'jpeg') {
+    notas.push('Você escolheu JPG, então há uma recompressão. Em PNG o recorte sai idêntico ao original.');
+  }
+
+  return entregar(ctx, saidas, 'imagens-recortadas', notas);
 }
