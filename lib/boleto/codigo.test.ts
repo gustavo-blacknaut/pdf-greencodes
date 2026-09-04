@@ -22,6 +22,7 @@ import {
   lerBoleto,
   linhaParaCodigo,
   mod10,
+  mod11Arrecadacao,
   mod11Bancario,
   somenteDigitos,
 } from './codigo';
@@ -130,25 +131,53 @@ describe('ler o boleto', () => {
 });
 
 describe('arrecadação', () => {
-  /** Conta de energia: começa com 8, e a linha tem 48 dígitos. */
-  const ENERGIA = '836100000005500000230009012345678901234567890';
+  /**
+   * Monta uma conta de concessionária com o dígito certo.
+   *
+   * O layout são 44 dígitos: 8 + segmento + tipo de valor + DV + valor(11) +
+   * empresa(4) + campo livre(25). O terceiro dígito decide qual módulo vale —
+   * 6 e 7 usam o 10; 8 e 9, o 11 — e é o detalhe que mais passa batido.
+   */
+  const monta = (tipoValor: string, segmento = '3', valor = '00000055000') => {
+    const semDv = '8' + segmento + tipoValor + valor + '00230009012345678901234567890'.slice(0, 29);
+    const dv = tipoValor === '6' || tipoValor === '7' ? mod10(semDv) : mod11Arrecadacao(semDv);
+    return semDv.slice(0, 3) + dv + semDv.slice(3);
+  };
 
   it('reconhece pelo primeiro dígito', () => {
-    const lido = lerBoleto(ENERGIA.slice(0, 44));
+    const lido = lerBoleto(monta('6'));
     expect(lido.tipo).toBe('arrecadacao');
     expect(lido.segmento).toBe('Energia elétrica ou gás');
   });
 
-  it('a linha digitável tem 48 dígitos, em quatro blocos', () => {
-    const linha = codigoParaLinha(ENERGIA.slice(0, 44));
+  it.each([
+    ['módulo 10', '6'],
+    ['módulo 11', '8'],
+  ])('%s: 44 vira 48 e volta idêntico, com o dígito conferindo', (_nome, tipoValor) => {
+    const codigo = monta(tipoValor);
+    expect(codigo).toHaveLength(44);
+
+    const linha = codigoParaLinha(codigo);
     expect(linha).toHaveLength(48);
-    expect(linhaParaCodigo(linha)).toBe(ENERGIA.slice(0, 44));
+    expect(linhaParaCodigo(linha)).toBe(codigo);
+
+    // Ler pelos 44 ou pelos 48 tem que dar exatamente a mesma coisa.
+    const porCodigo = lerBoleto(codigo);
+    const porLinha = lerBoleto(linha);
+    expect(porCodigo.valido).toBe(true);
+    expect(porLinha.codigo).toBe(porCodigo.codigo);
+    expect(porLinha.valor).toBe(550);
+  });
+
+  it('acusa o dígito errado, e não aceita porque tem 44 números', () => {
+    const bom = monta('6');
+    const ruim = bom.slice(0, 3) + ((Number(bom[3]) + 1) % 10) + bom.slice(4);
+    expect(lerBoleto(ruim).valido).toBe(false);
   });
 
   it('valor de referência não é dinheiro, e não vira R$ 0,00 mentiroso', () => {
     // Terceiro dígito 7 quer dizer "quantidade/referência", não valor.
-    const referencia = '87' + '7' + ENERGIA.slice(3, 44);
-    expect(lerBoleto(referencia).valor).toBe(0);
+    expect(lerBoleto(monta('7')).valor).toBe(0);
   });
 });
 
