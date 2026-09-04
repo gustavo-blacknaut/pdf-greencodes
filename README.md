@@ -1,8 +1,12 @@
 # PDF.GreenCodes
 
-Ferramentas de PDF que rodam inteiras no seu navegador. Sem upload, sem servidor, sem conta.
+56 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
 Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
 desktop no Windows.
+
+O aplicativo foi feito para gráfica: converte RGB para CMYK sem rasterizar, imprime em 600 e
+1200 DPI, chega no tipo de papel do driver da impressora, e o preto puro sai **C20 M20 Y0 K100** em
+vez das quatro tintas que um perfil ICC entregaria.
 
 ```bash
 npm install
@@ -26,19 +30,63 @@ O resultado vive num cofre em memória com prazo de 10 minutos e contador na tel
 download preserva a cópia, porque é comum o navegador perguntar onde salvar. O botão então vira
 **Baixar de novo**: essa segunda cópia apaga a da memória na hora.
 
+No aplicativo é diferente, e por um motivo: ali o arquivo é gravado em disco e é seu. O prazo some,
+o processamento pesado sai da aba e vai para um processo Python local, e nada disso muda a única
+coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois.**
+
 ---
 
-## As 24 ferramentas
+## As 56 ferramentas
 
-| Organizar | Editar | Converter | Otimizar e privacidade |
-|---|---|---|---|
-| **Juntar PDF** | Assinar PDF | PDF para imagem | Comprimir PDF |
-| Organizar páginas | Editar PDF | Imagem para PDF | Reparar PDF |
-| Remover páginas | Girar PDF | PDF para texto | Proteger PDF |
-| Extrair páginas | Cortar PDF | PDF para Word | Desbloquear PDF |
-| Dividir PDF | Redimensionar PDF | OCR: PDF pesquisável | Limpar metadados |
-| Várias por folha | Marca d'água | Extrair imagens | |
-| | Numerar páginas | | |
+| Organizar | Editar | Converter | Otimizar e cor | Privacidade |
+|---|---|---|---|---|
+| **Juntar PDF** | Assinar PDF | PDF para imagem | Comprimir PDF | Proteger PDF |
+| Organizar páginas | Editar PDF | Imagem para PDF | RGB para CMYK | Desbloquear PDF |
+| Remover páginas | Girar PDF | PDF para texto | Tons de cinza | Limpar metadados |
+| Extrair páginas | Cortar PDF | PDF para Word | Tons de preto | Definir metadados |
+| Dividir PDF | Redimensionar PDF | Word para PDF | Inverter cor | |
+| Dividir páginas | Marca d'água | Excel para PDF | Reparar PDF | |
+| Várias por folha | Numerar páginas | PowerPoint para PDF | | |
+| Inverter páginas | Cabeçalho e rodapé | Texto para PDF | | |
+| Intercalar PDF | Achatar PDF | OCR: PDF pesquisável | | |
+| Livreto | | Extrair imagens | | |
+| Separar pares e ímpares | | | | |
+| Páginas em branco | | | | |
+
+E a categoria **Gráfica**, que é o serviço entre a arte pronta e a máquina:
+
+| | |
+|---|---|
+| **Marcas de corte** | sangria e marca para a guilhotina |
+| **Cartão de visita** | enche a folha e marca as ruas para o corte |
+| **Etiquetas e adesivos** | a mesma grade, com a medida que você quiser |
+| **Numeração sequencial** | talão, ingresso, rifa e senha |
+| **Espelhar PDF** | sublimação, transfer e serigrafia |
+| **Repetir páginas** | a tiragem toda num arquivo só |
+| **Conferir antes de imprimir** | acha a foto borrada e a fonte que falta |
+| **Folha de fotos** | 3x4, passaporte, 5x7, polaroid, adesivo, revelação |
+| **Separar chapas** | cada cor sozinha, como vai para a chapa |
+| **Cobertura de tinta** | antes de o papel encharcar |
+
+E a categoria **Imagem**, que roda inteira no navegador — inclusive no site:
+
+| | |
+|---|---|
+| **Converter imagem** | WEBP, AVIF, GIF e BMP para JPG, PNG ou WEBP, em lote |
+| **Redimensionar imagem** | por medida, por porcentagem, ou em milímetros no DPI da impressão |
+| **Comprimir imagem** | você diz o peso, ela acha a melhor qualidade que cabe |
+| **HEIC para JPG** | a foto que o iPhone grava desde 2017 e quase nada abre |
+
+Essas quatro ficam no JavaScript por medição, não por gosto: o motor Python grava só
+`png, pnm, pgm, ppm, pbm, pam, psd, ps, jpg, jpeg` — **não grava webp**. O Chromium grava,
+decodifica webp e avif, e não custa um byte de instalador. É o inverso do que acontece com PDF.
+O decodificador de HEIC são 2,9 MB e só é baixado quando alguém manda um HEIC.
+
+Mais **Imprimir**, que tem tela própria. Quatro ferramentas só existem no aplicativo — *RGB para
+CMYK*, *Folha de fotos*, *Separar chapas* e *Cobertura de tinta* —, porque dependem do motor
+Python para ler a página em quatro canais. **No site elas nem aparecem na lista**: o site é 100%
+JavaScript e roda inteiro no navegador, e mostrar uma tela que não entrega o que promete seria pior
+que não ter a ferramenta.
 
 Quatro delas trabalham com uma **grade de miniaturas** em vez de formulário: organizar, remover,
 extrair e girar. Você vê o documento e clica nele. Outras duas abrem um **editor sobre a página**:
@@ -93,9 +141,12 @@ O app não é o site numa janela. Ele faz o que só um programa instalado conseg
 - **Menu do botão direito no Explorador.** Clique em um PDF e escolha *Abrir no PDF.GreenCodes*.
   Selecione vários e escolha *Juntar com o PDF.GreenCodes* — todos chegam de uma vez, porque a
   chave usa `MultiSelectModel=Player` em vez de abrir uma janela por arquivo.
-- **Diálogo nativo de salvar.** Você escolhe a pasta, o arquivo vai direto para o disco e aparece um
-  atalho *Mostrar na pasta*. Nada de pasta de downloads.
-- **Sem prazo de expiração.** O contador de 10 minutos some: o disco é seu.
+- **Salva sozinho em `Downloads/PDF.GreenCodes`.** O nome é o primeiro número livre — `1.pdf`,
+  `2.pdf`, `3.pdf`. Quem processa vinte documentos seguidos não quer escolher pasta e nome vinte
+  vezes. Também há o diálogo nativo, e um atalho *Mostrar na pasta*.
+- **Sem prazo de expiração.** O contador de 10 minutos some: o disco é seu. Se o arquivo era só
+  para imprimir agora, dá para marcar *Apagar sozinho em 1 dia* — por arquivo, e a marca pode ser
+  posta ou tirada depois de salvar.
 - **Abertura por clique duplo e "Abrir com".** O arquivo cai direto na ferramenta que estiver aberta.
 - **Vive na bandeja** e inicia com o Windows em modo oculto, sem pular na cara ao ligar o computador.
 
@@ -118,6 +169,70 @@ Tudo que ela consegue fazer passa por uma lista fechada de canais em `electron/p
 validado do outro lado. Não existe `invoke` genérico de propósito — assim uma falha na interface não
 vira acesso ao sistema de arquivos.
 
+### Três linguagens, e por que cada uma
+
+O aplicativo usa JavaScript, Python e C#. Não por gosto: cada parte foi para onde a alternativa
+media pior.
+
+| Parte | Linguagem | Por quê |
+|---|---|---|
+| Interface | TypeScript / React | É a mesma tela do site. Escrever duas vezes seria manter duas. |
+| Motor de PDF | Python (PyMuPDF) | Velocidade medida, não suposta. |
+| Impressão | C# (.NET Framework) | É o único caminho até o driver da impressora. |
+
+**O motor.** Rasterizar página no pdf.js é lento. No mesmo arquivo de 141 páginas: **1189 ms por
+página no pdf.js contra 277 ms no PyMuPDF**, com o arquivo de saída do mesmo tamanho.
+
+Mas o ganho maior estava escondido em outro lugar. Por muito tempo as ferramentas que só mexem na
+estrutura do PDF ficaram no JavaScript, porque "já eram rápidas". **Não eram.** O custo nunca
+esteve na operação: está no pdf-lib abrir e gravar o arquivo. Só abrir e gravar um documento de
+300 páginas, **sem fazer trabalho nenhum**, custa 7,0 s — 1,4 s para abrir e 5,6 s para gravar.
+
+| serviço completo, 300 páginas | JavaScript | Python | |
+|---|---|---|---|
+| cortar | 7057 ms | 428 ms | **16,5x** |
+| dividir | 7038 ms | 535 ms | **13,2x** |
+| numerar | 7382 ms | 771 ms | **9,6x** |
+| redimensionar | 7683 ms | 825 ms | **9,3x** |
+| inverter páginas | 7151 ms | 787 ms | **9,1x** |
+| marca d'água | 7337 ms | 820 ms | **9,0x** |
+| várias por folha | 7352 ms | 895 ms | **8,2x** |
+
+O tempo do Python já inclui gravar a entrada em disco, mandar pelo canal e ler o resultado de
+volta — é o que a pessoa espera de verdade, não o tempo da operação pura.
+
+O que continua no JavaScript não é o que é rápido: é o que o motor não sabe fazer. Proteger com
+permissões de impressão e cópia, dividir por tamanho, marca d'água ladrilhada, o editor e o OCR.
+Cada um desses tem uma guarda explícita dizendo por quê. A conversa é por linhas de JSON no
+stdin/stdout de um processo só, que sobe uma vez e fica.
+
+O Python vai embutido na instalação (distribuição *embeddable*), então **não é preciso ter Python
+na máquina**. Ele fica em `motor/runtime/`, que é ignorado pelo git — quem clona roda o script de
+preparo, e quem instala recebe pronto.
+
+**A impressão.** O Chromium não expõe tipo e espessura de papel — comum, fotográfico, cartão. Essa
+escolha não é do sistema de impressão, é do driver, e no Windows só se chega nela pelo
+`DocumentProperties` com uma DEVMODE. Daí o executável em C#, compilado pelo `csc.exe` que já vem
+no Windows (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\`): **não é preciso instalar o SDK do
+.NET**, e o binário de 12 KB roda em qualquer Windows 10 ou 11 sem runtime junto.
+
+### O preto que sai preto
+
+`RGB para CMYK` e `Tons de preto` existem por um motivo prático de gráfica. Um preto RGB convertido
+por perfil ICC vira algo como **C72 M67 Y67 K88**: quatro tintas fazendo o trabalho de uma, papel
+encharcado, e franja colorida no texto fino se as chapas saírem de registro.
+
+Aqui o preto neutro é reescrito como **C20 M20 Y0 K100** — a chapa preta faz o preto, e um pouco de
+ciano e magenta dão profundidade sem sujar. Cinza neutro sai em K puro. Cor de verdade e foto ficam
+como estão.
+
+O documento ainda é marcado como `/DeviceCMYK`. Sem isso o MuPDF grava um `ICCBased`, e um perfil é
+permissão para o RIP reconverter — o K100 que você mandou chegaria na impressora em quatro tintas
+de novo.
+
+Nada disso rasteriza: o `recolor` do MuPDF converte vetor, texto e imagem embutida de uma vez. Um
+contrato de 200 KB continua com 200 KB, e não vira 40 MB de imagem.
+
 ---
 
 ## Rodando e testando
@@ -126,8 +241,9 @@ vira acesso ao sistema de arquivos.
 npm run dev          # desenvolvimento
 npm run build        # gera out/
 npm run preview      # serve out/ para conferir o build
-npm test             # 75 testes
-npm run typecheck
+npm run verificar    # tamanho dos arquivos + typecheck + os 270 testes
+npm run motor        # os 254 testes do motor Python
+npm run impressora   # compila o executavel de impressao em C#
 ```
 
 Os testes cobrem a lógica pura, que é onde erro passa despercebido: interpretador de intervalos de
@@ -135,7 +251,11 @@ página, barreiras de arquivo, geometria do editor e consistência do registro d
 
 Alguns são de integração e valem por muitos: geram PDFs de verdade com o pdf-lib e leem o resultado
 de volta com o pdf.js. É o que garante que a assinatura cai no lugar certo e que o merge não volta a
-sair em branco.
+sair em branco. Do lado do Python, os testes abrem cada saída de volta com o PyMuPDF e conferem a
+cor no fluxo de conteúdo — é assim que se sabe que o K100 continuou K100.
+
+`npm run verificar` também recusa arquivo com mais de 800 linhas. É arbitrário de propósito: passar
+disso quase sempre quer dizer que dois assuntos foram parar no mesmo lugar.
 
 ---
 
@@ -265,7 +385,11 @@ PDF original não são preservados. Para digitalizado, rode o OCR antes.
 
 Next.js 16 (App Router, Turbopack, saída estática) · React 19 · TypeScript · Tailwind CSS 4 ·
 [@cantoo/pdf-lib](https://www.npmjs.com/package/@cantoo/pdf-lib) · pdf.js · [tesseract.js](https://github.com/naptha/tesseract.js) ·
-JSZip · Vitest · Electron.
+JSZip · Vitest · Electron 33.
+
+No aplicativo, mais dois: **Python 3.12 embutido com [PyMuPDF](https://pymupdf.readthedocs.io/)**
+(o motor de PDF) e **C# / .NET Framework** (a impressão). Nenhum dos dois precisa estar instalado
+na máquina — o Python vai junto no instalador e o C# é compilado pelo `csc.exe` do próprio Windows.
 
 ## Deploy
 

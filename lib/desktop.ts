@@ -20,7 +20,8 @@ type Ponte = {
   versao: () => Promise<string>;
   salvarArquivo: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
   salvarVarios: (arquivos: { nome: string; bytes: ArrayBuffer }[]) => Promise<ResultadoSalvarVarios>;
-  salvarNumerado: (nome: string, bytes: ArrayBuffer) => Promise<ResultadoSalvar>;
+  salvarNumerado: (nome: string, bytes: ArrayBuffer, apagarEm1Dia?: boolean) => Promise<ResultadoSalvar>;
+  autoExclusao: (caminho: string, ligado: boolean) => Promise<ResultadoSalvar>;
   abrir: (caminho: string) => Promise<ResultadoSalvar>;
   abrirAqui: (caminho: string) => Promise<ResultadoSalvar>;
   abrirNoNavegador: (caminho: string) => Promise<ResultadoSalvar>;
@@ -28,6 +29,16 @@ type Ponte = {
   lerArquivo: (caminho: string) => Promise<{ ok: boolean; nome?: string; bytes?: ArrayBuffer; erro?: string }>;
   aoLerArquivo: (callback: (dados: { caminho: string; lidos: number; total: number }) => void) => () => void;
   revelar: (caminho: string) => Promise<boolean>;
+  abrirPastaDosResultados: () => Promise<ResultadoSalvar>;
+  motor: {
+    executar: (acao: string, pedido: PedidoDoMotor) => Promise<Record<string, unknown>>;
+    cancelar: () => Promise<boolean>;
+    pastaTemporaria: () => Promise<string>;
+    gravarEntrada: (pasta: string, nome: string, bytes: ArrayBuffer) => Promise<string>;
+    lerSaida: (caminho: string) => Promise<{ nome: string; bytes: ArrayBuffer }>;
+    limpar: (pasta: string) => Promise<void>;
+    aoAndar: (callback: (passo: PassoDoMotor) => void) => () => void;
+  };
   impressao: {
     preparar: () => Promise<{ ok: boolean; id?: string; erro?: string }>;
     pagina: (id: string, indice: number, bytes: ArrayBuffer) => Promise<{ ok: boolean; erro?: string }>;
@@ -42,6 +53,26 @@ type Ponte = {
 };
 
 export type Impressora = { nome: string; apelido: string; descricao: string; padrao: boolean };
+
+/** O que o motor Python recebe. Caminhos em disco, nunca bytes. */
+export type PedidoDoMotor = {
+  arquivos: string[];
+  opcoes?: Record<string, unknown>;
+  senhas?: string[];
+  saida?: string;
+};
+
+export type PassoDoMotor = { id: string; fracao: number; mensagem?: string };
+
+/** Abre no Explorador a pasta onde os resultados sao salvos. */
+export async function abrirPastaDosResultados(): Promise<boolean> {
+  return Boolean((await ponte()?.abrirPastaDosResultados())?.ok);
+}
+
+/** O motor Python, ou nada quando estamos no site. */
+export function motorPython() {
+  return ponte()?.motor ?? null;
+}
 
 /**
  * O que o Chromium aceita configurar sem abrir a caixa do Windows.
@@ -97,13 +128,26 @@ export async function salvarArquivo(nome: string, blob: Blob): Promise<Resultado
 }
 
 /**
- * Grava em Documentos/PDF.GreenCodes com o primeiro número livre: 1.pdf,
+ * Grava em Downloads/PDF.GreenCodes com o primeiro número livre: 1.pdf,
  * 2.pdf, 3.pdf. Sem diálogo e sem sobrescrever nada.
+ *
+ * `apagarEm1Dia` marca o arquivo para se apagar sozinho depois de 24 horas.
+ * É opcional e por arquivo: o que não for marcado fica para sempre, porque é
+ * arquivo da pessoa, no computador dela.
  */
-export async function salvarNumerado(nome: string, blob: Blob): Promise<ResultadoSalvar> {
+export async function salvarNumerado(
+  nome: string,
+  blob: Blob,
+  apagarEm1Dia = false,
+): Promise<ResultadoSalvar> {
   const api = ponte();
   if (!api) return { ok: false, erro: 'Fora do aplicativo.' };
-  return api.salvarNumerado(nome, await blob.arrayBuffer());
+  return api.salvarNumerado(nome, await blob.arrayBuffer(), apagarEm1Dia);
+}
+
+/** Liga ou desliga a auto-exclusão de um arquivo que já foi salvo. */
+export async function definirAutoExclusao(caminho: string, ligado: boolean): Promise<boolean> {
+  return Boolean((await ponte()?.autoExclusao(caminho, ligado))?.ok);
 }
 
 /** Abre numa janela do próprio programa. */

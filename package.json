@@ -1,6 +1,6 @@
 {
   "name": "pdf-greencodes",
-  "version": "2.5.0",
+  "version": "3.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,10 +14,13 @@
     "app:build": "npm run build && electron-builder --win --publish never",
     "deploy": "git pull && npm ci && npm run build && pm2 restart pdf-greencodes",
     "tamanho": "node scripts/verificar-tamanho.js",
-    "verificar": "npm run tamanho && npm run typecheck && npm run test"
+    "verificar": "npm run tamanho && npm run typecheck && npm run test",
+    "impressora": "node scripts/compilar-impressora.js",
+    "motor": "motor\\runtime\\python.exe -m pytest motor/testes -q"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",
+    "heic-to": "^1.5.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.469.0",
     "next": "^16.3.3",
@@ -82,6 +85,30 @@
         "name": "Documento PDF",
         "role": "Editor",
         "description": "Abrir no PDF.GreenCodes"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "motor",
+        "to": "recursos/motor",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!testes/**",
+          "!runtime/Lib/site-packages/pip/**",
+          "!runtime/Lib/site-packages/pip-*/**",
+          "!runtime/Lib/site-packages/pytest/**",
+          "!runtime/Lib/site-packages/_pytest/**",
+          "!runtime/Lib/site-packages/pytest-*/**",
+          "!runtime/Scripts/**"
+        ]
+      },
+      {
+        "from": "impressora",
+        "to": "recursos/impressora",
+        "filter": [
+          "impressora.exe"
+        ]
       }
     ]
   }

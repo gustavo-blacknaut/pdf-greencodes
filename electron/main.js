@@ -10,6 +10,25 @@ const { spawn } = require('node:child_process');
 
 const integracao = require('./integracao-windows');
 const impressao = require('./impressao');
+const { Motor } = require('./motor');
+const { Resultados } = require('./resultados');
+
+/**
+ * Onde moram o Python e o programa de impressão.
+ *
+ * Empacotado eles ficam fora do asar, porque os dois precisam existir como
+ * arquivo de verdade no disco para serem executados.
+ */
+const RAIZ_DOS_MOTORES = app.isPackaged
+  ? path.join(process.resourcesPath, 'recursos')
+  : path.join(__dirname, '..');
+
+const motor = new Motor(RAIZ_DOS_MOTORES);
+
+// Downloads porque e onde a pessoa ja procura arquivo baixado; a subpasta
+// porque a auto-exclusao varre por tempo, e varrer a raiz de Downloads seria
+// apagar coisa que nao e nossa.
+let resultados = null;
 
 /**
  * PDF.GreenCodes para desktop.
@@ -345,6 +364,67 @@ function definirIntegracao(ligado) {
 function registrarCanais() {
   ipcMain.handle('app:versao', () => app.getVersion());
 
+  /* ---------------------------------------------------------- motor Python */
+
+  // O andamento chega por fora do pedido, então é reenviado para a janela em
+  // vez de voltar como resposta da chamada.
+  motor.aoAndar = (passo) => {
+    if (janela && !janela.isDestroyed()) janela.webContents.send('motor:andamento', passo);
+  };
+
+  ipcMain.handle('motor:executar', (_evento, { acao, pedido }) => motor.executar(acao, pedido).espera);
+  ipcMain.handle('motor:cancelar', () => motor.cancelar());
+
+  /**
+   * Uma pasta temporária por trabalho, e o caminho de um arquivo dentro dela.
+   *
+   * O motor trabalha com arquivo em disco; a interface trabalha com bytes na
+   * memória. Estes dois canais são a ponte entre os dois mundos.
+   */
+  ipcMain.handle('motor:pasta-temporaria', async () => {
+    const pasta = path.join(os.tmpdir(), 'pdf-greencodes', `motor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    await fsp.mkdir(pasta, { recursive: true });
+    return pasta;
+  });
+
+  ipcMain.handle('motor:gravar-entrada', async (_evento, { pasta, nome, bytes }) => {
+    if (typeof pasta !== 'string' || typeof nome !== 'string' || !(bytes instanceof ArrayBuffer)) {
+      throw new Error('Pedido inválido.');
+    }
+    // path.basename corta qualquer tentativa de sair da pasta temporária pelo
+    // nome do arquivo.
+    const destino = path.join(pasta, path.basename(nome));
+    await fsp.writeFile(destino, Buffer.from(bytes));
+    return destino;
+  });
+
+  ipcMain.handle('motor:ler-saida', async (_evento, { caminho }) => {
+    if (typeof caminho !== 'string') throw new Error('Pedido inválido.');
+    const bytes = await fsp.readFile(caminho);
+    return { nome: path.basename(caminho), bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+  });
+
+  ipcMain.handle('motor:limpar', async (_evento, { pasta }) => {
+    if (typeof pasta !== 'string' || !pasta.includes('pdf-greencodes')) return;
+    await fsp.rm(pasta, { recursive: true, force: true });
+  });
+
+  /**
+   * Abre a pasta onde os resultados são salvos.
+   *
+   * "Onde foi parar o arquivo" é a pergunta mais comum depois de rodar
+   * alguma coisa, e todo resultado salvo pelo botão Abrir cai aqui.
+   */
+  ipcMain.handle('arquivo:pasta-resultados', async () => {
+    try {
+      const pasta = await resultados.garantirPasta();
+      await shell.openPath(pasta);
+      return { ok: true, caminho: pasta };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
+  });
+
   ipcMain.on('sistema:pronto', async () => {
     interfacePronta = true;
     if (filaDeArquivos.length) {
@@ -382,23 +462,26 @@ function registrarCanais() {
    * disco e pronto. O número é o primeiro livre da pasta: 1.pdf, 2.pdf, e por
    * aí. Nunca sobrescreve nada.
    */
-  ipcMain.handle('arquivo:salvar-numerado', async (_evento, { nome, bytes }) => {
+  ipcMain.handle('arquivo:salvar-numerado', async (_evento, { nome, bytes, apagarEm1Dia }) => {
     if (typeof nome !== 'string' || !(bytes instanceof ArrayBuffer)) {
       return { ok: false, erro: 'Pedido inválido.' };
     }
 
     try {
-      const pasta = path.join(app.getPath('documents'), 'PDF.GreenCodes');
-      await fsp.mkdir(pasta, { recursive: true });
+      const caminho = await resultados.salvar(nome, bytes, { apagarEm1Dia: apagarEm1Dia === true });
+      return { ok: true, caminho };
+    } catch (erro) {
+      return { ok: false, erro: erro.message };
+    }
+  });
 
-      const extensao = path.extname(nome) || '.pdf';
-      const existentes = new Set(await fsp.readdir(pasta));
-      let numero = 1;
-      while (existentes.has(numero + extensao)) numero += 1;
-
-      const destino = path.join(pasta, numero + extensao);
-      await fsp.writeFile(destino, Buffer.from(bytes));
-      return { ok: true, caminho: destino };
+  /** Liga ou desliga a auto-exclusão de um arquivo que já foi salvo. */
+  ipcMain.handle('arquivo:auto-exclusao', async (_evento, { caminho, ligado }) => {
+    if (typeof caminho !== 'string') return { ok: false, erro: 'Pedido inválido.' };
+    try {
+      if (ligado) await resultados.marcarParaApagar(caminho);
+      else await resultados.manterParaSempre(caminho);
+      return { ok: true, caminho };
     } catch (erro) {
       return { ok: false, erro: erro.message };
     }
@@ -669,6 +752,10 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
 
+    // Só dá para perguntar as pastas do sistema depois que o app está pronto.
+    resultados = new Resultados(app.getPath('downloads'), app.getPath('userData'));
+    resultados.iniciarVarredura();
+
     registrarCanais();
     montarMenu();
     await montarBandeja();
@@ -688,6 +775,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     impressao.limparTudo();
+    motor.desligar();
     encerrando = true;
   });
 }

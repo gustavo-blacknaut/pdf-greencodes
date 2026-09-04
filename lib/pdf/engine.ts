@@ -8,7 +8,7 @@
  * uma ferramenta nova mexe em `operacoes/`, e neste arquivo só numa linha.
  */
 
-import { blackTones, compress, grayscale, invertColors, repair } from './operacoes/otimizar';
+import { blackTones, compress, grayscale, inkCoverage, invertColors, repair, rgbToCmyk, separatePlates } from './operacoes/otimizar';
 import {
   applyPlan,
   blankPages,
@@ -29,12 +29,17 @@ import {
   pdfToImages,
   pdfToText,
   pdfToWord,
+  photoSheet,
   powerpointToPdf,
   textToPdf,
   wordToPdf,
 } from './operacoes/converter';
 import { crop, edit, flatten, headerFooter, pageNumbers, resize, watermark } from './operacoes/editar';
 import { protect, setMetadata, stripMetadata, unlock } from './operacoes/seguranca';
+import { businessCards, cropMarks, labels, mirror, repeatPages, sequentialNumbering } from './operacoes/grafica';
+import { preflight } from './operacoes/verificar';
+import { compressImage, convertImage, heicToImage, resizeImage } from './operacoes/imagem';
+import { rodarNoPython, temMotorPython } from './motor-python';
 import type { RunContext, RunResult } from './tipos';
 
 /* A interface importa tudo daqui, então o que ela usa é reexportado. */
@@ -81,6 +86,7 @@ export const OPERATIONS = {
   grayscale,
   'invert-colors': invertColors,
   'black-tones': blackTones,
+  'rgb-to-cmyk': rgbToCmyk,
   flatten,
   'header-footer': headerFooter,
   'set-metadata': setMetadata,
@@ -90,6 +96,20 @@ export const OPERATIONS = {
   'blank-pages': blankPages,
   'excel-to-pdf': excelToPdf,
   'powerpoint-to-pdf': powerpointToPdf,
+  'crop-marks': cropMarks,
+  'business-cards': businessCards,
+  labels,
+  'sequential-numbering': sequentialNumbering,
+  mirror,
+  'repeat-pages': repeatPages,
+  preflight,
+  'photo-sheet': photoSheet,
+  'separate-plates': separatePlates,
+  'ink-coverage': inkCoverage,
+  'convert-image': convertImage,
+  'resize-image': resizeImage,
+  'compress-image': compressImage,
+  'heic-to-image': heicToImage,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;
@@ -97,7 +117,11 @@ export type OperationId = keyof typeof OPERATIONS;
 export async function runOperation(id: OperationId, ctx: RunContext): Promise<RunResult> {
   const operation = OPERATIONS[id];
   if (!operation) throw new Error(`Ferramenta desconhecida: ${id}`);
-  const resultado = await operation(ctx);
+
+  // No aplicativo, as ferramentas que rasterizam página vão para o motor
+  // Python: medido, 277 ms por página contra 1189 do pdf.js. No site
+  // `temMotorPython` é sempre falso e nada muda.
+  const resultado = temMotorPython(id, ctx) ? await rodarNoPython(id, ctx) : await operation(ctx);
 
   // `salvarPdf` devolve a senha ao resultado. O aviso fica aqui, num lugar só,
   // em vez de repetido em cada operação. Proteger e desbloquear ficam de fora:

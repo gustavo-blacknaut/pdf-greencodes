@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CATEGORIES, TOOLS, rotaDaFerramenta } from '@/lib/tools';
+import { CATEGORIES, TOOLS_DO_SITE, rotaDaFerramenta } from '@/lib/tools';
 
 export function Footer() {
   return (
@@ -15,7 +15,7 @@ export function Footer() {
 
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
           {CATEGORIES.map((category) => {
-            const items = TOOLS.filter((tool) => tool.category === category);
+            const items = TOOLS_DO_SITE.filter((tool) => tool.category === category);
             if (!items.length) return null;
             return (
               <div key={category}>

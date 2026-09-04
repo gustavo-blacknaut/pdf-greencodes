@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { CATEGORIES, TOOLS, rotaDaFerramenta, type Tool } from '@/lib/tools';
+import { CATEGORIES, TOOLS_DO_SITE, rotaDaFerramenta, type Tool } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { ToolIcon } from './ToolIcon';
 import { cx } from '@/lib/utils';
@@ -13,7 +13,7 @@ export function ToolGrid() {
   const router = useRouter();
   const [filter, setFilter] = useState<string>('Todas');
 
-  const visible = filter === 'Todas' ? TOOLS : TOOLS.filter((tool) => tool.category === filter);
+  const visible = filter === 'Todas' ? TOOLS_DO_SITE : TOOLS_DO_SITE.filter((tool) => tool.category === filter);
 
   /** Hover = intenção. Buscamos a rota e aquecemos o motor antes do clique. */
   function preload(tool: Tool) {

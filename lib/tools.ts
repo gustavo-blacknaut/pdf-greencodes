@@ -8,6 +8,8 @@
 
 import { CONVERTER } from './ferramentas/converter';
 import { EDITAR } from './ferramentas/editar';
+import { GRAFICA } from './ferramentas/grafica';
+import { IMAGEM } from './ferramentas/imagem';
 import { ORGANIZAR } from './ferramentas/organizar';
 import { OTIMIZAR } from './ferramentas/otimizar';
 import { PRIVACIDADE } from './ferramentas/privacidade';
@@ -32,6 +34,20 @@ const ORDEM = [
   'dividir-pdf',
   'reparar-pdf',
   'varias-por-folha',
+  'marcas-de-corte',
+  'cartao-de-visita',
+  'etiquetas',
+  'numeracao-sequencial',
+  'folha-de-fotos',
+  'separar-chapas',
+  'cobertura-de-tinta',
+  'verificar-impressao',
+  'espelhar-pdf',
+  'repetir-paginas',
+  'converter-imagem',
+  'redimensionar-imagem',
+  'comprimir-imagem',
+  'heic-para-jpg',
   'girar-pdf',
   'assinar-pdf',
   'editar-pdf',
@@ -55,6 +71,7 @@ const ORDEM = [
   'pdf-tons-de-cinza',
   'inverter-cor',
   'pdf-tons-de-preto',
+  'rgb-para-cmyk',
   'achatar-pdf',
   'cabecalho-rodape',
   'dividir-paginas',
@@ -66,14 +83,19 @@ const ORDEM = [
   'texto-para-pdf',
 ];
 
-const CATALOGO = [...CONVERTER, ...OTIMIZAR, ...ORGANIZAR, ...EDITAR, ...PRIVACIDADE];
+const CATALOGO = [...CONVERTER, ...OTIMIZAR, ...ORGANIZAR, ...EDITAR, ...GRAFICA, ...IMAGEM, ...PRIVACIDADE];
 
 export const TOOLS: Tool[] = [...CATALOGO].sort(
   (a, b) =>
     (ORDEM.indexOf(a.slug) + 1 || ORDEM.length + 1) - (ORDEM.indexOf(b.slug) + 1 || ORDEM.length + 1),
 );
 
-export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Privacidade'] as const;
+/**
+ * As que o site mostra: tudo menos o que só funciona no aplicativo.
+ */
+export const TOOLS_DO_SITE: Tool[] = TOOLS.filter((tool) => !tool.soNoAplicativo);
+
+export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Gráfica', 'Imagem', 'Privacidade'] as const;
 
 /** Onde a ferramenta vive. A de impressão tem página própria. */
 export function rotaDaFerramenta(tool: Tool, base: '' | '/app' = ''): string {

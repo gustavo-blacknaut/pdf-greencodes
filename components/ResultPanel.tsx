@@ -23,6 +23,7 @@ import {
   abrirNoAplicativo,
   abrirNoNavegador,
   abrirNoSistema,
+  definirAutoExclusao,
   estaNoAplicativo,
   revelarNoExplorador,
   salvarNumerado,
@@ -50,6 +51,11 @@ export function ResultPanel({
   // contagem regressiva: o arquivo é seu e fica onde você mandar.
   const [noApp, setNoApp] = useState(false);
   const [salvoEm, setSalvoEm] = useState<string | null>(null);
+  // Auto-exclusão: desligada por padrão, porque o arquivo é da pessoa. Quem
+  // só queria imprimir e não quer a pasta entupindo liga aqui, e o que já
+  // foi salvo muda de ideia sem precisar salvar de novo.
+  const [apagarEm1Dia, setApagarEm1Dia] = useState(false);
+  const [salvos, setSalvos] = useState<string[]>([]);
   const [bulkDownloaded, setBulkDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,12 +125,13 @@ export function ResultPanel({
     const arquivo = entry!.files.find((f) => f.name === fileName);
     if (!arquivo) return;
 
-    const salvo = await salvarNumerado(arquivo.name, arquivo.blob);
+    const salvo = await salvarNumerado(arquivo.name, arquivo.blob, apagarEm1Dia);
     if (!salvo.ok || !salvo.caminho) {
       setError(salvo.erro ?? 'Não foi possível salvar o arquivo.');
       return;
     }
     setSalvoEm(salvo.caminho);
+    setSalvos((antigos) => [...antigos, salvo.caminho!]);
 
     // No próprio programa: é o que evita depender de qual leitor de PDF a
     // máquina tem instalado, e o que a pessoa pediu.
@@ -137,16 +144,37 @@ export function ResultPanel({
     setError(null);
     if (entry!.files.length === 1) return abrirUm(entry!.files[0].name);
 
-    let ultimo: string | null = null;
+    const caminhos: string[] = [];
     for (const arquivo of entry!.files) {
-      const r = await salvarNumerado(arquivo.name, arquivo.blob);
+      const r = await salvarNumerado(arquivo.name, arquivo.blob, apagarEm1Dia);
       if (!r.ok || !r.caminho) {
         setError(r.erro ?? 'Não foi possível salvar os arquivos.');
         return;
       }
-      ultimo = r.caminho;
+      caminhos.push(r.caminho);
     }
-    if (ultimo) setSalvoEm(ultimo);
+    if (caminhos.length > 0) {
+      setSalvoEm(caminhos[caminhos.length - 1]);
+      setSalvos((antigos) => [...antigos, ...caminhos]);
+    }
+  }
+
+  /**
+   * Muda a marca de auto-exclusão.
+   *
+   * Vale para o que ainda vai ser salvo e também para o que já foi: marcar
+   * depois de salvar é justamente o caso comum — a pessoa imprime, vê que
+   * deu certo, e só então decide que não precisa guardar.
+   */
+  async function trocarAutoExclusao(ligado: boolean) {
+    setApagarEm1Dia(ligado);
+    setError(null);
+    for (const caminho of salvos) {
+      if (!(await definirAutoExclusao(caminho, ligado))) {
+        setError('Não foi possível mudar a auto-exclusão deste arquivo.');
+        return;
+      }
+    }
   }
 
   async function downloadAll() {
@@ -333,20 +361,34 @@ export function ResultPanel({
           <button type="button" onClick={onReset} className="btn-ghost">
             <RotateCcw className="h-4 w-4" /> Novo arquivo
           </button>
-          {!noApp && (
-          <button
-            type="button"
-            onClick={() => vault.purge(entryId, 'manual')}
-            className="btn ml-auto text-muted hover:text-rose-500"
-          >
-            <Trash2 className="h-4 w-4" /> Apagar agora
-          </button>
+          {noApp ? (
+            <label className="btn ml-auto cursor-pointer select-none text-muted has-[:checked]:text-brand">
+              <input
+                type="checkbox"
+                checked={apagarEm1Dia}
+                onChange={(e) => void trocarAutoExclusao(e.target.checked)}
+                className="h-3.5 w-3.5 accent-brand"
+              />
+              <Timer className="h-4 w-4" /> Apagar sozinho em 1 dia
+            </label>
+          ) : (
+            <button
+              type="button"
+              onClick={() => vault.purge(entryId, 'manual')}
+              className="btn ml-auto text-muted hover:text-rose-500"
+            >
+              <Trash2 className="h-4 w-4" /> Apagar agora
+            </button>
           )}
         </div>
 
         <p className="mt-3 text-[11px] leading-relaxed text-muted">
           {noApp ? (
-            <>Você escolhe a pasta. O arquivo fica no seu disco, sem prazo para expirar.</>
+            <>
+              O arquivo vai para <strong className="font-medium text-ink">Downloads/PDF.GreenCodes</strong> e fica lá,
+              sem prazo. Marque <strong className="font-medium text-ink">Apagar sozinho em 1 dia</strong> se for só
+              para imprimir agora — vale para os que já foram salvos também.
+            </>
           ) : (
             <>
           Baixar guarda o arquivo no seu computador e mantém a cópia aqui até o tempo acabar.{' '}

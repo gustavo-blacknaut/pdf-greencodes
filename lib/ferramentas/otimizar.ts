@@ -1,4 +1,4 @@
-import { type Tool, PDF_ACCEPT } from './tipos';
+import { OPCOES_DE_DPI, type Tool, PDF_ACCEPT } from './tipos';
 
 /** Ferramentas da categoria "Otimizar". */
 export const OTIMIZAR: Tool[] = [
@@ -38,6 +38,48 @@ export const OTIMIZAR: Tool[] = [
     ],
   },
   {
+    slug: 'rgb-para-cmyk',
+    operation: 'rgb-to-cmyk',
+    name: 'RGB para CMYK',
+    tagline: 'Separa a cor antes de mandar para a chapa',
+    description:
+      'Converte o documento inteiro — texto, traço e as fotos de dentro — para CMYK, sem rasterizar nada: o texto continua texto e o arquivo não incha. O preto puro sai na receita da casa, C20 M20 Y0 K100, e os cinzas só na chapa preta, em vez do preto de quatro tintas que a conversão por perfil devolveria sozinha.',
+    icon: 'Droplets',
+    accent: '6 182 212',
+    category: 'Otimizar',
+    accept: [...PDF_ACCEPT, 'image/jpeg', 'image/png', '.jpg', '.jpeg', '.png'],
+    acceptLabel: 'PDF ou imagem',
+    multiple: false,
+    soNoAplicativo: true,
+    cta: 'Converter para CMYK',
+    fields: [
+      {
+        key: 'preto',
+        type: 'select',
+        label: 'Preto puro sai como',
+        default: 'rico',
+        options: [
+          { value: 'rico', label: 'C20 M20 K100', hint: 'o preto da casa · mais fundo em área chapada' },
+          { value: 'k100', label: 'K100 puro', hint: 'só a chapa preta · sem risco de franja em texto fino' },
+        ],
+      },
+      {
+        key: 'ajustarPreto',
+        type: 'toggle',
+        label: 'Corrigir os neutros',
+        default: true,
+        help: 'A conversão por perfil manda preto RGB para C72 M67 Y67 K88 — quatro tintas para fazer o que uma faz, e franja colorida em texto fino se as chapas saírem um fio desalinhadas. Ligado, preto e cinza voltam para a chapa preta. As fotos não são tocadas: ali as quatro tintas são o certo.',
+      },
+      {
+        key: 'marcarDevice',
+        type: 'toggle',
+        label: 'Marcar como DeviceCMYK',
+        default: true,
+        help: 'Sem isto o arquivo sai com perfil ICC, e perfil é permissão para o RIP converter a cor de novo — justamente o que se estava evitando. Desligue só se a sua gráfica pedir o arquivo com perfil.',
+      },
+    ],
+  },
+  {
     slug: 'reparar-pdf',
     operation: 'repair',
     name: 'Reparar PDF',
@@ -73,11 +115,7 @@ export const OTIMIZAR: Tool[] = [
         type: 'select',
         label: 'Qualidade',
         default: '150',
-        options: [
-          { value: '110', label: 'Rascunho', hint: '110 DPI · arquivo menor' },
-          { value: '150', label: 'Normal', hint: '150 DPI · bom para imprimir' },
-          { value: '220', label: 'Alta', hint: '220 DPI · arquivo maior' },
-        ],
+        options: [...OPCOES_DE_DPI],
       },
     ],
   },
@@ -101,11 +139,7 @@ export const OTIMIZAR: Tool[] = [
         type: 'select',
         label: 'Qualidade',
         default: '150',
-        options: [
-          { value: '110', label: 'Rascunho', hint: '110 DPI · arquivo menor' },
-          { value: '150', label: 'Normal', hint: '150 DPI · bom para imprimir' },
-          { value: '220', label: 'Alta', hint: '220 DPI · arquivo maior' },
-        ],
+        options: [...OPCOES_DE_DPI],
       },
     ],
   },
@@ -125,6 +159,18 @@ export const OTIMIZAR: Tool[] = [
     cta: 'Escurecer',
     fields: [
       {
+        key: 'tinta',
+        type: 'select',
+        label: 'Qual preto',
+        default: 'rgb',
+        options: [
+          { value: 'rgb', label: 'Preto de tela', hint: 'RGB comum · serve para laser e para ler na tela' },
+          { value: 'k100', label: 'K100', hint: 'só a chapa preta · sem erro de registro, o certo para texto' },
+          { value: 'rico', label: 'Preto rico', hint: '20C 20M 100K · mais fundo em área chapada' },
+        ],
+        help: 'K100 e preto rico saem em DeviceCMYK de verdade, sem perfil ICC no meio — o RIP recebe exatamente esses valores de tinta em vez de reconverter. Só no aplicativo: no site o motor não grava CMYK.',
+      },
+      {
         key: 'limite',
         type: 'range',
         label: 'A partir de que tom vira preto',
@@ -139,11 +185,7 @@ export const OTIMIZAR: Tool[] = [
         type: 'select',
         label: 'Qualidade',
         default: '150',
-        options: [
-          { value: '110', label: 'Rascunho', hint: '110 DPI · arquivo menor' },
-          { value: '150', label: 'Normal', hint: '150 DPI · bom para imprimir' },
-          { value: '220', label: 'Alta', hint: '220 DPI · arquivo maior' },
-        ],
+        options: [...OPCOES_DE_DPI],
       },
     ],
   },

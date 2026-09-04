@@ -3,13 +3,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { ToolWorkspace } from '@/components/ToolWorkspace';
-import { getTool, TOOLS } from '@/lib/tools';
+import { getTool, TOOLS_DO_SITE } from '@/lib/tools';
 
 type Params = { params: Promise<{ slug: string }> };
 
 export function generateStaticParams() {
   // A de impressão tem página própria; gerar /imprimir aqui colidiria com ela.
-  return TOOLS.filter((tool) => !tool.rota).map((tool) => ({ slug: tool.slug }));
+  return TOOLS_DO_SITE.filter((tool) => !tool.rota).map((tool) => ({ slug: tool.slug }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -28,7 +28,7 @@ export default async function ToolPage({ params }: Params) {
   const tool = getTool(slug);
   if (!tool) notFound();
 
-  const related = TOOLS.filter((item) => item.slug !== tool.slug && item.category === tool.category).slice(0, 3);
+  const related = TOOLS_DO_SITE.filter((item) => item.slug !== tool.slug && item.category === tool.category).slice(0, 3);
 
   return (
     <>

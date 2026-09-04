@@ -283,11 +283,30 @@ export async function blackTones(ctx: RunContext): Promise<RunResult> {
     ctx,
     (dados) => filtroTonsDePreto(dados, limite),
     'preto',
-    [
-      'Cinza virou preto puro e o fundo virou branco. Texto claro de digitalização sai cheio em vez de falhado.',
-      'Não há meio-tom: foto neste modo vira mancha. Para foto, use tons de cinza.',
-    ],
+    notasDoTonsDePreto(String(ctx.options.tinta ?? 'rgb')),
   );
+}
+
+/**
+ * O que o resultado avisa, conforme a tinta pedida.
+ *
+ * Gravar DeviceCMYK exige o motor do aplicativo: aqui, no navegador, o canvas
+ * só entrega RGB. Quem pediu K100 e recebeu preto comum precisa saber disso —
+ * entregar quadricromia achando que é chapa preta é o tipo de erro que só
+ * aparece na hora da impressão, com o trabalho já rodando.
+ */
+export function notasDoTonsDePreto(tinta: string): string[] {
+  const comuns = [
+    'Cinza virou preto puro e o fundo virou branco. Texto claro de digitalização sai cheio em vez de falhado.',
+    'Não há meio-tom: foto neste modo vira mancha. Para foto, use tons de cinza.',
+  ];
+
+  if (tinta !== 'k100' && tinta !== 'rico') return comuns;
+
+  return [
+    'O preto saiu em RGB comum, não em CMYK: gravar K100 ou preto rico só é possível no aplicativo para Windows, onde o motor grava DeviceCMYK de verdade.',
+    ...comuns,
+  ];
 }
 
 /**
@@ -340,4 +359,38 @@ export async function grayscale(ctx: RunContext): Promise<RunResult> {
     outputBytes: blob.size,
     notes: ['As páginas viraram imagem em tons de cinza, então o texto deixa de ser selecionável e pesquisável.'],
   };
+}
+
+/**
+ * RGB para CMYK.
+ *
+ * Não há implementação aqui: o canvas do navegador só entrega RGB, e gravar
+ * DeviceCMYK exige o motor do aplicativo. A função existe para o registro de
+ * ferramentas ficar completo e para quem chegar aqui receber a explicação, em
+ * vez de um resultado errado em silêncio. No aplicativo, `runOperation` desvia
+ * para o Python antes de chegar nesta linha.
+ */
+export async function rgbToCmyk(): Promise<RunResult> {
+  throw new Error(
+    'Converter para CMYK só funciona no aplicativo para Windows: o navegador não consegue gravar cor de separação.',
+  );
+}
+
+/**
+ * Separação de chapas e cobertura de tinta.
+ *
+ * Mesma razão do CMYK: as duas leem a página em quatro canais, e o canvas do
+ * navegador só entrega RGB. No aplicativo, `runOperation` desvia para o
+ * Python antes de chegar aqui.
+ */
+export async function separatePlates(): Promise<RunResult> {
+  throw new Error(
+    'Separar as chapas só funciona no aplicativo para Windows: o navegador não lê a página em CMYK.',
+  );
+}
+
+export async function inkCoverage(): Promise<RunResult> {
+  throw new Error(
+    'Medir a cobertura de tinta só funciona no aplicativo para Windows: o navegador não lê a página em CMYK.',
+  );
 }

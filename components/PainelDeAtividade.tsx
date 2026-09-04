@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Activity, Check, Loader2, Printer, Trash2, Wrench, X } from 'lucide-react';
+import { Activity, Check, FolderOpen, Loader2, Printer, Trash2, Wrench, X } from 'lucide-react';
 import { atividade, type Tarefa } from '@/lib/atividade';
+import { abrirPastaDosResultados, estaNoAplicativo } from '@/lib/desktop';
 import { cx, formatDuration } from '@/lib/utils';
 
 /**
@@ -111,6 +112,10 @@ function CartaoDaTarefa({ tarefa }: { tarefa: Tarefa }) {
 export function PainelDeAtividade() {
   const tarefas = useAtividade();
   const [aberto, setAberto] = useState(false);
+  // Num efeito e não na renderização: no servidor não existe `window`, e o
+  // HTML gerado lá tem que bater com o primeiro desenho aqui.
+  const [noApp, setNoApp] = useState(false);
+  useEffect(() => setNoApp(estaNoAplicativo()), []);
 
   const rodando = tarefas.filter((t) => t.estado === 'rodando');
   const impressoes = tarefas.filter((t) => t.tipo === 'impressao');
@@ -148,6 +153,17 @@ export function PainelDeAtividade() {
             <div className="flex items-center gap-2 border-b border-line px-4 py-3">
               <Activity className="h-4 w-4 text-brand" />
               <p className="flex-1 text-sm font-semibold tracking-tight">Atividade</p>
+              {noApp && (
+                <button
+                  type="button"
+                  onClick={() => abrirPastaDosResultados()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink"
+                  title="Abre no Explorador a pasta onde os resultados são salvos"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Mostrar a pasta
+                </button>
+              )}
               {rodando.length > 0 && (
                 <button
                   type="button"
