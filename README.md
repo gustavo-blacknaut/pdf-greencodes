@@ -1,6 +1,6 @@
 # PDF.GreenCodes
 
-52 ferramentas de PDF que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
+56 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
 Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
 desktop no Windows.
 
@@ -36,7 +36,7 @@ coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois
 
 ---
 
-## As 52 ferramentas
+## As 56 ferramentas
 
 | Organizar | Editar | Converter | Otimizar e cor | Privacidade |
 |---|---|---|---|---|
@@ -67,6 +67,20 @@ E a categoria **Gráfica**, que é o serviço entre a arte pronta e a máquina:
 | **Folha de fotos** | 3x4, passaporte, 5x7, polaroid, adesivo, revelação |
 | **Separar chapas** | cada cor sozinha, como vai para a chapa |
 | **Cobertura de tinta** | antes de o papel encharcar |
+
+E a categoria **Imagem**, que roda inteira no navegador — inclusive no site:
+
+| | |
+|---|---|
+| **Converter imagem** | WEBP, AVIF, GIF e BMP para JPG, PNG ou WEBP, em lote |
+| **Redimensionar imagem** | por medida, por porcentagem, ou em milímetros no DPI da impressão |
+| **Comprimir imagem** | você diz o peso, ela acha a melhor qualidade que cabe |
+| **HEIC para JPG** | a foto que o iPhone grava desde 2017 e quase nada abre |
+
+Essas quatro ficam no JavaScript por medição, não por gosto: o motor Python grava só
+`png, pnm, pgm, ppm, pbm, pam, psd, ps, jpg, jpeg` — **não grava webp**. O Chromium grava,
+decodifica webp e avif, e não custa um byte de instalador. É o inverso do que acontece com PDF.
+O decodificador de HEIC são 2,9 MB e só é baixado quando alguém manda um HEIC.
 
 Mais **Imprimir**, que tem tela própria. Quatro ferramentas só existem no aplicativo — *RGB para
 CMYK*, *Folha de fotos*, *Separar chapas* e *Cobertura de tinta* —, porque dependem do motor
@@ -227,8 +241,8 @@ contrato de 200 KB continua com 200 KB, e não vira 40 MB de imagem.
 npm run dev          # desenvolvimento
 npm run build        # gera out/
 npm run preview      # serve out/ para conferir o build
-npm run verificar    # tamanho dos arquivos + typecheck + os 245 testes
-npm run motor        # os 251 testes do motor Python
+npm run verificar    # tamanho dos arquivos + typecheck + os 270 testes
+npm run motor        # os 254 testes do motor Python
 npm run impressora   # compila o executavel de impressao em C#
 ```
 
