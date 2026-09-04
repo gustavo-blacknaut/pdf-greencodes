@@ -8,10 +8,17 @@
  * página e o PyMuPDF 277 ms — 2min48s contra 39s. Toda ferramenta que
  * rasteriza página sente essa diferença.
  *
- * As que só mexem na estrutura do PDF (juntar, dividir, girar) já eram
- * rápidas no TypeScript, então continuam lá: trocar por trocar só somaria
- * risco de mudar comportamento sem ganho nenhum. O mapa `NO_PYTHON` é a lista
- * explícita do que atravessa.
+ * Por muito tempo as que só mexem na estrutura do PDF ficaram de fora daqui,
+ * porque "já eram rápidas". **Não eram, e a medição desmentiu.** O custo
+ * nunca esteve na operação: está no pdf-lib abrir e gravar o arquivo. Só
+ * abrir e gravar um documento de 300 páginas, sem fazer trabalho nenhum,
+ * custa 7,0 s — 1,4 s para abrir e 5,6 s para gravar. O PyMuPDF entrega o
+ * serviço completo, ida e volta ao disco incluída, em menos de 1 s.
+ *
+ * O que continua no TypeScript não é o que é rápido: é o que o motor não
+ * sabe fazer. Proteger com permissões de impressão e cópia, dividir por
+ * tamanho, marca d'água ladrilhada, o editor e o OCR. Cada caso desses tem
+ * um `aceita` explicando, e o mapa `NO_PYTHON` é a lista do que atravessa.
  *
  * No site nada disso existe: `window.greenpdf` não está lá, `temMotorPython`
  * devolve falso e o motor de TypeScript atende tudo, como sempre atendeu.
@@ -37,6 +44,8 @@ type Traducao = {
   rotulo: string;
 };
 
+/** Os nomes de papel como o motor os conhece. */
+const PAPEIS_DO_MOTOR: Record<string, string> = { a3: 'A3', a4: 'A4', a5: 'A5', carta: 'carta', oficio: 'oficio' };
 function numero(valor: unknown, padrao: number): number {
   const n = Number(valor);
   return Number.isFinite(n) ? n : padrao;
@@ -93,6 +102,114 @@ const NO_PYTHON: Record<string, Traducao> = {
       ajustarPreto: o.ajustarPreto !== false,
       marcarDevice: o.marcarDevice !== false,
     }),
+  },
+
+  // --- as que só mexem na estrutura do PDF ---
+  //
+  // Estavam em JavaScript por uma suposição que a medição desmentiu: elas
+  // "já eram rápidas". Não eram. O custo nunca esteve na operação, e sim no
+  // pdf-lib abrir e gravar o arquivo — num documento de 300 páginas isso é
+  // 7,0 s de piso, sem fazer trabalho nenhum. O PyMuPDF faz o serviço
+  // inteiro, ida e volta ao disco incluída, em menos de 1 s.
+
+  merge: {
+    acao: 'juntar',
+    rotulo: 'Juntando',
+    // Juntar aceita imagem misturada com PDF, e desenhar a imagem numa página
+    // é serviço do lado de cá. Só a fila 100% PDF desce para o Python.
+    aceita: (ctx) => ctx.files.every((f) => f.name.toLowerCase().endsWith('.pdf')),
+  },
+  reverse: { acao: 'inverter-paginas', rotulo: 'Invertendo a ordem' },
+  booklet: { acao: 'livreto', rotulo: 'Montando o livreto' },
+  'odd-even': { acao: 'separar-pares-impares', rotulo: 'Separando' },
+  repair: { acao: 'reparar', rotulo: 'Reparando' },
+  'strip-metadata': { acao: 'limpar-metadados', rotulo: 'Limpando os dados' },
+  'set-metadata': {
+    acao: 'definir-metadados',
+    rotulo: 'Gravando os dados',
+    opcoes: (o) => ({
+      title: String(o.title ?? ''),
+      author: String(o.author ?? ''),
+      subject: String(o.subject ?? ''),
+      keywords: String(o.keywords ?? ''),
+    }),
+  },
+  crop: {
+    acao: 'cortar',
+    rotulo: 'Aparando',
+    opcoes: (o) => ({
+      topo: numero(o.top, 0),
+      base: numero(o.bottom, 0),
+      esquerda: numero(o.left, 0),
+      direita: numero(o.right, 0),
+    }),
+  },
+  'split-pages': {
+    acao: 'dividir-paginas',
+    rotulo: 'Cortando ao meio',
+    opcoes: (o) => ({ sentido: String(o.mode ?? 'vertical') }),
+  },
+  interleave: {
+    acao: 'intercalar',
+    rotulo: 'Intercalando',
+    opcoes: (o) => ({ inverterSegundo: o.reverseSecond === true || o.reverseSecond === 'true' }),
+  },
+  'n-up': {
+    acao: 'varias-por-folha',
+    rotulo: 'Montando as folhas',
+    opcoes: (o) => ({
+      porFolha: numero(o.perSheet, 2),
+      espaco: numero(o.espacamentoMm, 0),
+      margem: numero(o.margemMm, 0),
+      borda: o.border === true || o.border === 'true',
+    }),
+  },
+  'header-footer': {
+    acao: 'cabecalho-rodape',
+    rotulo: 'Escrevendo',
+    opcoes: (o) => ({
+      cabecalho: String(o.header ?? ''),
+      rodape: String(o.footer ?? ''),
+      alinhamento: String(o.align ?? 'centro'),
+      tamanho: numero(o.size, 10),
+    }),
+  },
+  'page-numbers': {
+    acao: 'numerar',
+    rotulo: 'Numerando',
+    opcoes: (o) => ({
+      posicao: String(o.position ?? 'rodape-centro'),
+      formato: String(o.format ?? '{n}'),
+      comecarEm: numero(o.startAt, 1),
+      tamanho: numero(o.size, 11),
+    }),
+  },
+  watermark: {
+    acao: 'marca-dagua',
+    rotulo: 'Carimbando',
+    // `tile` repete a marca pela página inteira, e o motor Python só sabe
+    // carimbar uma vez no meio. Ladrilhado continua do lado de cá.
+    aceita: (ctx) => ctx.options.tile !== true && ctx.options.tile !== 'true',
+    opcoes: (o) => ({
+      texto: String(o.text ?? ''),
+      tamanho: numero(o.size, 48),
+      opacidade: numero(o.opacity, 0.18),
+      giro: numero(o.angle, 45),
+    }),
+  },
+  resize: {
+    acao: 'redimensionar',
+    rotulo: 'Redimensionando',
+    // "Escala" e medida livre não existem no motor; papel conhecido, sim.
+    aceita: (ctx) => ['a3', 'a4', 'a5', 'carta', 'oficio'].includes(String(ctx.options.target ?? 'a4')),
+    opcoes: (o) => ({ papel: PAPEIS_DO_MOTOR[String(o.target ?? 'a4')] ?? 'A4' }),
+  },
+  split: {
+    acao: 'dividir',
+    rotulo: 'Dividindo',
+    // Dos quatro modos da ferramenta, o motor faz um: N páginas por arquivo.
+    aceita: (ctx) => String(ctx.options.mode ?? 'every') === 'every',
+    opcoes: (o) => ({ porArquivo: numero(o.every, 1) }),
   },
 
   'separate-plates': {

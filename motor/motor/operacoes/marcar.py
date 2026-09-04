@@ -134,10 +134,13 @@ def marca_dagua(pedido: Pedido) -> Dict[str, Any]:
             # texto gira: a caixa recorta antes da rotação. insert_text não
             # tem esse problema, então o centro é calculado à mão.
             centro = pymupdf.Point(pagina.rect.width / 2, pagina.rect.height / 2)
-            origem = pymupdf.Point(centro.x - largura_texto / 2, centro.y + tamanho * 0.3)
+            # Nome proprio, e nao `origem`: essa variavel guarda o caminho do
+            # arquivo, e sobrescrever ela aqui fazia o salvar receber um Point
+            # no lugar do caminho.
+            canto = pymupdf.Point(centro.x - largura_texto / 2, centro.y + tamanho * 0.3)
 
             pagina.insert_text(
-                origem,
+                canto,
                 texto,
                 fontname=fonte,
                 fontsize=tamanho,

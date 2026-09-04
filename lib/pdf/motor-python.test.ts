@@ -54,11 +54,42 @@ describe('quais ferramentas atravessam', () => {
     }
   });
 
-  it('deixa no TypeScript as que só mexem na estrutura', () => {
-    // Juntar e girar já eram rápidas: trocar só somaria risco.
-    for (const id of ['merge', 'split', 'rotate', 'protect', 'ocr']) {
+  it('manda também as que só mexem na estrutura', () => {
+    // Antes ficavam no TypeScript, por acreditar que "já eram rápidas".
+    // A medição desmentiu: o custo nunca esteve na operação, e sim no
+    // pdf-lib abrir e gravar — 7,0 s de piso num documento de 300 páginas,
+    // sem fazer trabalho nenhum. O PyMuPDF faz o serviço inteiro em menos
+    // de 1 s, ida e volta ao disco incluída.
+    for (const id of ['merge', 'reverse', 'booklet', 'crop', 'header-footer', 'page-numbers', 'repair']) {
+      expect(temMotorPython(id, contexto()), id).toBe(true);
+    }
+  });
+
+  it('deixa no TypeScript o que o motor não sabe fazer', () => {
+    // `ocr` e o editor não existem do lado de lá; `protect` existe, mas só
+    // com senha — as permissões de impressão e cópia se perderiam.
+    for (const id of ['ocr', 'edit', 'protect', 'pdf-to-word', 'unlock']) {
       expect(temMotorPython(id, contexto()), id).toBe(false);
     }
+  });
+
+  it('só desce o modo de dividir que o motor cobre', () => {
+    expect(temMotorPython('split', contexto({ options: { mode: 'every', every: 5 } }))).toBe(true);
+    // Por tamanho e por intervalo o motor não faz; ficam no TypeScript.
+    expect(temMotorPython('split', contexto({ options: { mode: 'size', maxSize: 5 } }))).toBe(false);
+    expect(temMotorPython('split', contexto({ options: { mode: 'ranges', ranges: '1-3' } }))).toBe(false);
+  });
+
+  it('marca d’água ladrilhada fica no TypeScript', () => {
+    // O motor carimba uma vez no meio; repetir pela página é daqui.
+    expect(temMotorPython('watermark', contexto({ options: { text: 'X' } }))).toBe(true);
+    expect(temMotorPython('watermark', contexto({ options: { text: 'X', tile: true } }))).toBe(false);
+  });
+
+  it('redimensionar por escala fica no TypeScript', () => {
+    expect(temMotorPython('resize', contexto({ options: { target: 'a4' } }))).toBe(true);
+    expect(temMotorPython('resize', contexto({ options: { target: 'scale', scale: 50 } }))).toBe(false);
+    expect(temMotorPython('resize', contexto({ options: { target: 'personalizado' } }))).toBe(false);
   });
 
   it('no site nada atravessa, porque não existe motor', () => {
