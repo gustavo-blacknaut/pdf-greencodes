@@ -5,6 +5,7 @@ aparece aqui e o que o aplicativo manda no campo "acao": mudar este mapa e a
 unica coisa necessaria para ligar ou desligar uma ferramenta.
 """
 
+from .chapas import cobertura_de_tinta, separar_chapas
 from .cmyk import rgb_para_cmyk
 from .converter import extrair_imagens, imagem_para_pdf, pdf_para_imagem
 from .cores import inverter_cor, tons_de_cinza, tons_de_preto
@@ -31,6 +32,8 @@ from .seguranca import desbloquear, proteger
 ACOES = {
     "informar": informar,
     "rgb-para-cmyk": rgb_para_cmyk,
+    "separar-chapas": separar_chapas,
+    "cobertura-de-tinta": cobertura_de_tinta,
     "formatos": formatos,
     "folha-de-fotos": folha_de_fotos,
     "desenhar": desenhar,

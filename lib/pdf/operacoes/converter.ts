@@ -760,3 +760,16 @@ export async function extractImages(ctx: RunContext): Promise<RunResult> {
     notes: [`${images.length} imagens extraídas.`, ...notes],
   };
 }
+
+/**
+ * Folha de fotos: 3x4, 5x7, polaroid, adesivo, e a revelação avulsa.
+ *
+ * O recorte de cada rosto e a montagem da grade são do motor do aplicativo,
+ * que tem o PyMuPDF para recortar sem perder resolução. No site a ferramenta
+ * nem aparece na lista.
+ */
+export async function photoSheet(): Promise<RunResult> {
+  throw new Error(
+    'A folha de fotos só funciona no aplicativo para Windows, que tem o motor para recortar e montar a grade.',
+  );
+}

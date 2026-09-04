@@ -375,3 +375,22 @@ export async function rgbToCmyk(): Promise<RunResult> {
     'Converter para CMYK só funciona no aplicativo para Windows: o navegador não consegue gravar cor de separação.',
   );
 }
+
+/**
+ * Separação de chapas e cobertura de tinta.
+ *
+ * Mesma razão do CMYK: as duas leem a página em quatro canais, e o canvas do
+ * navegador só entrega RGB. No aplicativo, `runOperation` desvia para o
+ * Python antes de chegar aqui.
+ */
+export async function separatePlates(): Promise<RunResult> {
+  throw new Error(
+    'Separar as chapas só funciona no aplicativo para Windows: o navegador não lê a página em CMYK.',
+  );
+}
+
+export async function inkCoverage(): Promise<RunResult> {
+  throw new Error(
+    'Medir a cobertura de tinta só funciona no aplicativo para Windows: o navegador não lê a página em CMYK.',
+  );
+}

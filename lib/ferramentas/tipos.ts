@@ -40,7 +40,7 @@ export type Tool = {
   description: string;
   icon: string;
   accent: string;
-  category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Privacidade';
+  category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Gráfica' | 'Privacidade';
   accept: string[];
   acceptLabel: string;
   multiple: boolean;

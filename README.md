@@ -1,6 +1,6 @@
 # PDF.GreenCodes
 
-41 ferramentas de PDF que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
+52 ferramentas de PDF que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
 Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
 desktop no Windows.
 
@@ -36,7 +36,7 @@ coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois
 
 ---
 
-## As 41 ferramentas
+## As 52 ferramentas
 
 | Organizar | Editar | Converter | Otimizar e cor | Privacidade |
 |---|---|---|---|---|
@@ -53,8 +53,26 @@ coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois
 | Separar pares e ímpares | | | | |
 | Páginas em branco | | | | |
 
-Mais **Imprimir**, que tem tela própria. *RGB para CMYK* só existe no aplicativo, porque depende do
-motor Python — no site a ferramenta nem aparece na lista.
+E a categoria **Gráfica**, que é o serviço entre a arte pronta e a máquina:
+
+| | |
+|---|---|
+| **Marcas de corte** | sangria e marca para a guilhotina |
+| **Cartão de visita** | enche a folha e marca as ruas para o corte |
+| **Etiquetas e adesivos** | a mesma grade, com a medida que você quiser |
+| **Numeração sequencial** | talão, ingresso, rifa e senha |
+| **Espelhar PDF** | sublimação, transfer e serigrafia |
+| **Repetir páginas** | a tiragem toda num arquivo só |
+| **Conferir antes de imprimir** | acha a foto borrada e a fonte que falta |
+| **Folha de fotos** | 3x4, passaporte, 5x7, polaroid, adesivo, revelação |
+| **Separar chapas** | cada cor sozinha, como vai para a chapa |
+| **Cobertura de tinta** | antes de o papel encharcar |
+
+Mais **Imprimir**, que tem tela própria. Quatro ferramentas só existem no aplicativo — *RGB para
+CMYK*, *Folha de fotos*, *Separar chapas* e *Cobertura de tinta* —, porque dependem do motor
+Python para ler a página em quatro canais. **No site elas nem aparecem na lista**: o site é 100%
+JavaScript e roda inteiro no navegador, e mostrar uma tela que não entrega o que promete seria pior
+que não ter a ferramenta.
 
 Quatro delas trabalham com uma **grade de miniaturas** em vez de formulário: organizar, remover,
 extrair e girar. Você vê o documento e clica nele. Outras duas abrem um **editor sobre a página**:
@@ -189,8 +207,8 @@ contrato de 200 KB continua com 200 KB, e não vira 40 MB de imagem.
 npm run dev          # desenvolvimento
 npm run build        # gera out/
 npm run preview      # serve out/ para conferir o build
-npm run verificar    # tamanho dos arquivos + typecheck + os 176 testes
-npm run motor        # os 205 testes do motor Python
+npm run verificar    # tamanho dos arquivos + typecheck + os 225 testes
+npm run motor        # os 222 testes do motor Python
 npm run impressora   # compila o executavel de impressao em C#
 ```
 

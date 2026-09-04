@@ -95,6 +95,36 @@ const NO_PYTHON: Record<string, Traducao> = {
     }),
   },
 
+  'separate-plates': {
+    acao: 'separar-chapas',
+    rotulo: 'Separando as chapas',
+    opcoes: (o) => ({ dpi: numero(o.dpi, 150), chapas: String(o.chapas ?? 'cmyk') }),
+  },
+  'ink-coverage': {
+    acao: 'cobertura-de-tinta',
+    rotulo: 'Medindo a tinta',
+    opcoes: (o) => ({
+      dpi: numero(o.dpi, 150),
+      papel: String(o.papel ?? 'offset'),
+      limite: numero(o.limite, 300),
+    }),
+  },
+  'photo-sheet': {
+    acao: 'folha-de-fotos',
+    rotulo: 'Montando a folha',
+    opcoes: (o) => ({
+      modelo: String(o.modelo ?? '3x4'),
+      papel: String(o.papelFoto ?? '10x15'),
+      margem: numero(o.margemMm, 0),
+      espaco: numero(o.espacoMm, 0),
+      marcas: o.marcas !== false,
+      deitar: o.deitar === true,
+      esticar: o.esticar === true,
+      // Zero quer dizer "quantas couberem", que é o padrão do motor.
+      quantidade: numero(o.quantidade, 0),
+      dpi: numero(o.dpi, 300),
+    }),
+  },
   'pdf-to-images': {
     acao: 'pdf-para-imagem',
     rotulo: 'Desenhando as páginas',

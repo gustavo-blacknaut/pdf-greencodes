@@ -8,7 +8,7 @@
  * uma ferramenta nova mexe em `operacoes/`, e neste arquivo só numa linha.
  */
 
-import { blackTones, compress, grayscale, invertColors, repair, rgbToCmyk } from './operacoes/otimizar';
+import { blackTones, compress, grayscale, inkCoverage, invertColors, repair, rgbToCmyk, separatePlates } from './operacoes/otimizar';
 import {
   applyPlan,
   blankPages,
@@ -29,12 +29,15 @@ import {
   pdfToImages,
   pdfToText,
   pdfToWord,
+  photoSheet,
   powerpointToPdf,
   textToPdf,
   wordToPdf,
 } from './operacoes/converter';
 import { crop, edit, flatten, headerFooter, pageNumbers, resize, watermark } from './operacoes/editar';
 import { protect, setMetadata, stripMetadata, unlock } from './operacoes/seguranca';
+import { businessCards, cropMarks, labels, mirror, repeatPages, sequentialNumbering } from './operacoes/grafica';
+import { preflight } from './operacoes/verificar';
 import { rodarNoPython, temMotorPython } from './motor-python';
 import type { RunContext, RunResult } from './tipos';
 
@@ -92,6 +95,16 @@ export const OPERATIONS = {
   'blank-pages': blankPages,
   'excel-to-pdf': excelToPdf,
   'powerpoint-to-pdf': powerpointToPdf,
+  'crop-marks': cropMarks,
+  'business-cards': businessCards,
+  labels,
+  'sequential-numbering': sequentialNumbering,
+  mirror,
+  'repeat-pages': repeatPages,
+  preflight,
+  'photo-sheet': photoSheet,
+  'separate-plates': separatePlates,
+  'ink-coverage': inkCoverage,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;

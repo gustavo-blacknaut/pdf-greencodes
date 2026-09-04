@@ -8,6 +8,7 @@
 
 import { CONVERTER } from './ferramentas/converter';
 import { EDITAR } from './ferramentas/editar';
+import { GRAFICA } from './ferramentas/grafica';
 import { ORGANIZAR } from './ferramentas/organizar';
 import { OTIMIZAR } from './ferramentas/otimizar';
 import { PRIVACIDADE } from './ferramentas/privacidade';
@@ -32,6 +33,16 @@ const ORDEM = [
   'dividir-pdf',
   'reparar-pdf',
   'varias-por-folha',
+  'marcas-de-corte',
+  'cartao-de-visita',
+  'etiquetas',
+  'numeracao-sequencial',
+  'folha-de-fotos',
+  'separar-chapas',
+  'cobertura-de-tinta',
+  'verificar-impressao',
+  'espelhar-pdf',
+  'repetir-paginas',
   'girar-pdf',
   'assinar-pdf',
   'editar-pdf',
@@ -67,7 +78,7 @@ const ORDEM = [
   'texto-para-pdf',
 ];
 
-const CATALOGO = [...CONVERTER, ...OTIMIZAR, ...ORGANIZAR, ...EDITAR, ...PRIVACIDADE];
+const CATALOGO = [...CONVERTER, ...OTIMIZAR, ...ORGANIZAR, ...EDITAR, ...GRAFICA, ...PRIVACIDADE];
 
 export const TOOLS: Tool[] = [...CATALOGO].sort(
   (a, b) =>
@@ -79,7 +90,7 @@ export const TOOLS: Tool[] = [...CATALOGO].sort(
  */
 export const TOOLS_DO_SITE: Tool[] = TOOLS.filter((tool) => !tool.soNoAplicativo);
 
-export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Privacidade'] as const;
+export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Gráfica', 'Privacidade'] as const;
 
 /** Onde a ferramenta vive. A de impressão tem página própria. */
 export function rotaDaFerramenta(tool: Tool, base: '' | '/app' = ''): string {
