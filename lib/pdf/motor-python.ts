@@ -232,6 +232,7 @@ const NO_PYTHON: Record<string, Traducao> = {
     opcoes: (o) => ({
       modelo: String(o.modelo ?? '3x4'),
       papel: String(o.papelFoto ?? '10x15'),
+      paisagem: o.paisagem === true || o.paisagem === 'true',
       margem: numero(o.margemMm, 0),
       espaco: numero(o.espacoMm, 0),
       marcas: o.marcas !== false,

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Tuple
 
 import pymupdf
 
-from ..documento import nome_com_sufixo
+from ..documento import abrir, nome_com_sufixo
 from ..protocolo import ErroDoUsuario, Pedido
 
 PONTOS_POR_MM = 72 / 25.4
@@ -214,15 +214,25 @@ def montar_folha(
     dpi: int,
     deitar: bool = False,
     esticar: bool = False,
+    senha: str = "",
 ) -> Tuple[pymupdf.Document, Dict[str, Any]]:
     """Desenha a folha e devolve o documento junto com o que foi feito."""
     if not os.path.exists(origem):
         raise ErroDoUsuario(f"não encontrei a imagem: {os.path.basename(origem)}")
 
+    # Pelo `abrir` do documento, e nao pelo `pymupdf.open` cru: e ali que mora
+    # a conversao que faz uma foto virar PDF de uma pagina. Sem ela, um
+    # arquivo que o MuPDF abre mas nao trata como PDF derruba a operacao la na
+    # frente com "is no PDF", que nao diz nada a quem esta no balcao.
     try:
-        imagem = pymupdf.open(origem)
+        imagem = abrir(origem, senha)
+    except ErroDoUsuario:
+        raise
     except Exception as erro:  # noqa: BLE001
-        raise ErroDoUsuario(f"não consegui abrir {os.path.basename(origem)}: {erro}") from erro
+        raise ErroDoUsuario(
+            f"não consegui abrir {os.path.basename(origem)}: {erro}. "
+            "Se for foto de celular em HEIC, ou um formato menos comum, salve como JPG ou PNG antes."
+        ) from erro
 
     with imagem:
         if imagem.page_count == 0:
@@ -345,12 +355,19 @@ def folha_de_fotos(pedido: Pedido) -> Dict[str, Any]:
     if papel is None:
         raise ErroDoUsuario(f"não conheço o papel {nome_papel}")
 
+    # A folha em pé ou deitada. Os papéis estão guardados em pé, e virar é só
+    # trocar as medidas — mas muda quantas fotos cabem, e às vezes muda muito:
+    # num 10x15 deitado cabem doze 3x4 em vez de nove.
+    if bool(pedido.opcao("paisagem", False)):
+        papel = (papel[1], papel[0])
+
     previa = bool(pedido.opcao("previa", False))
     quantidade = pedido.opcao("quantidade")
 
     pedido.andamento(0.2, "Recortando a foto")
     folha, resumo = montar_folha(
         origem=pedido.arquivos[0],
+        senha=pedido.senha(0),
         modelo=modelo,
         papel=papel,
         recorte=pedido.opcao("recorte"),

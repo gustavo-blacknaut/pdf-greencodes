@@ -269,3 +269,41 @@ class TestEsticar:
             saida=destino,
         )
         assert not any("esticada" in n for n in resultado["notas"])
+
+
+class TestOrientacaoDoPapel:
+    """A folha em pe ou deitada.
+
+    Faltava escolher, e nao e detalhe: num 10x15 deitado cabem dez 3x4 em vez
+    de nove. Uma foto a mais por folha, no servico mais repetido do balcao.
+    """
+
+    def test_deitar_o_papel_muda_quantas_cabem(self, rodar, criar_foto_teste):
+        foto = criar_foto_teste(largura=900, altura=1200)
+        em_pe = rodar("folha-de-fotos", [foto], {"modelo": "3x4", "papel": "10x15"})
+        deitada = rodar("folha-de-fotos", [foto], {"modelo": "3x4", "papel": "10x15", "paisagem": True})
+
+        assert (em_pe["colunas"], em_pe["linhas"]) == (3, 3)
+        assert (deitada["colunas"], deitada["linhas"]) == (5, 2)
+        assert deitada["postas"] == 10 > em_pe["postas"] == 9
+
+    def test_a_folha_sai_deitada_de_verdade(self, rodar, criar_foto_teste):
+        import pymupdf
+
+        foto = criar_foto_teste(largura=900, altura=1200)
+        resultado = rodar("folha-de-fotos", [foto], {"modelo": "3x4", "papel": "10x15", "paisagem": True})
+
+        doc = pymupdf.open(resultado["arquivo"])
+        pagina = doc[0]
+        assert pagina.rect.width > pagina.rect.height, "o papel deveria estar deitado"
+        doc.close()
+
+    def test_sem_a_opcao_continua_em_pe(self, rodar, criar_foto_teste):
+        import pymupdf
+
+        foto = criar_foto_teste(largura=900, altura=1200)
+        resultado = rodar("folha-de-fotos", [foto], {"modelo": "3x4", "papel": "10x15"})
+
+        doc = pymupdf.open(resultado["arquivo"])
+        assert doc[0].rect.width < doc[0].rect.height
+        doc.close()

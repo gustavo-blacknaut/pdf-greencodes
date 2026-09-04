@@ -367,6 +367,13 @@ export const GRAFICA: Tool[] = [
         ],
       },
       {
+        key: 'paisagem',
+        type: 'toggle',
+        label: 'Folha deitada',
+        default: false,
+        help: 'Vira o papel de lado. Muda quantas cabem: num 10x15 deitado saem dez 3x4 em vez de nove.',
+      },
+      {
         key: 'quantidade',
         type: 'number',
         label: 'Quantas fotos',
