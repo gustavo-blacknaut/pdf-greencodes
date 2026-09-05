@@ -21,6 +21,7 @@ export type Field =
       options: { value: string; label: string; hint?: string }[];
     })
   | (FieldBase & { type: 'text'; default: string; placeholder?: string })
+  | (FieldBase & { type: 'texto-longo'; default: string; placeholder?: string })
   | (FieldBase & { type: 'password'; default: string; placeholder?: string })
   | (FieldBase & { type: 'number'; default: number; min: number; max: number; step?: number })
   | (FieldBase & { type: 'range'; default: number; min: number; max: number; step?: number; unit?: string })
@@ -40,7 +41,7 @@ export type Tool = {
   description: string;
   icon: string;
   accent: string;
-  category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Gráfica' | 'Imagem' | 'Privacidade';
+  category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Boleto' | 'Gráfica' | 'Imagem' | 'Privacidade';
   accept: string[];
   acceptLabel: string;
   multiple: boolean;
@@ -55,6 +56,13 @@ export type Tool = {
    * pessoa a uma tela que não entrega o que promete.
    */
   soNoAplicativo?: boolean;
+  /**
+   * Não recebe arquivo: o trabalho todo sai dos campos.
+   *
+   * Ler um código de boleto não precisa de arquivo nenhum — o número é a
+   * entrada. Sem isto a tela ficaria pedindo um arquivo que não existe.
+   */
+  semArquivo?: boolean;
   /** Substitui o painel de opções pela grade visual de páginas. */
   board?: BoardMode;
   /** Abre o editor visual sobre a página. */
@@ -64,7 +72,33 @@ export type Tool = {
 };
 
 export const PDF_ACCEPT = ['application/pdf', '.pdf'];
-export const IMAGE_ACCEPT = ['image/jpeg', 'image/png', 'image/webp', '.jpg', '.jpeg', '.png', '.webp'];
+/**
+ * O que conta como imagem na hora de escolher o arquivo.
+ *
+ * Vale tudo que o navegador decodifica, mais o HEIC do iPhone, que entra por
+ * um decodificador carregado so quando aparece um. A lista e generosa de
+ * proposito: recusar no dialogo obriga a pessoa a converter em outro lugar
+ * antes de voltar — e converter e justamente o que o programa faz.
+ */
+export const IMAGE_ACCEPT = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+  'image/gif',
+  'image/bmp',
+  'image/heic',
+  'image/heif',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.avif',
+  '.gif',
+  '.bmp',
+  '.heic',
+  '.heif',
+];
 
 /**
  * As resoluções que as ferramentas de desenho oferecem.

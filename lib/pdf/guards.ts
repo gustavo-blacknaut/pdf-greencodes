@@ -95,10 +95,38 @@ export function pareceMesmoPdf(bytes: ArrayBuffer): boolean {
 
 export function pareceMesmoImagem(bytes: ArrayBuffer): boolean {
   const b = new Uint8Array(bytes, 0, Math.min(16, bytes.byteLength));
+
   const jpeg = contem(b, [0xff, 0xd8, 0xff], 0);
   const png = contem(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  // RIFF....WEBP: o tamanho fica entre a marca e o formato, então são duas
+  // conferências em posições diferentes.
   const webp = contem(b, [0x52, 0x49, 0x46, 0x46], 0) && contem(b, [0x57, 0x45, 0x42, 0x50], 8);
-  return jpeg || png || webp;
+  const gif = contem(b, [0x47, 0x49, 0x46, 0x38], 0);
+  const bmp = contem(b, [0x42, 0x4d], 0);
+  // AVIF e HEIC são o mesmo contêiner ISO-BMFF: "ftyp" na posição 4, e a
+  // marca da variante logo depois.
+  const ftyp = contem(b, [0x66, 0x74, 0x79, 0x70], 4);
+  const avif = ftyp && contem(b, [0x61, 0x76, 0x69], 8);
+  const heic = ftyp && (contem(b, [0x68, 0x65, 0x69], 8) || contem(b, [0x6d, 0x69, 0x66], 8));
+
+  return jpeg || png || webp || gif || bmp || avif || heic;
+}
+
+/** As extensões de imagem que o programa sabe abrir. */
+const EXTENSAO_DE_IMAGEM = /\.(jpe?g|png|webp|avif|gif|bmp|heic|heif)$/i;
+
+/**
+ * Se o arquivo é imagem, decidido pelo nome **ou** pelo rótulo do sistema.
+ *
+ * Só olhar o `type` era o que recusava um PNG com "Formato não suportado":
+ * quando o arquivo vem do diálogo do Windows, ou de certos navegadores, o
+ * `File.type` chega vazio, e a extensão é a única pista que sobra.
+ *
+ * Isto é o portão, não a prova: quem passa daqui ainda encara o
+ * `pareceMesmoImagem`, que olha os bytes. Nome mente; assinatura não.
+ */
+export function pareceSerImagem(nome: string, type = ''): boolean {
+  return type.startsWith('image/') || EXTENSAO_DE_IMAGEM.test(nome);
 }
 
 /**

@@ -24,7 +24,9 @@ import { OpcoesDeImpressao } from './impressao/OpcoesDeImpressao';
 import { PreviaDaPagina } from './impressao/PreviaDaPagina';
 import { atividade } from '@/lib/atividade';
 import { vault } from '@/lib/ephemeral';
+import { IMAGE_ACCEPT } from '@/lib/ferramentas/tipos';
 import { inspectFile, runOperation, type OperationId } from '@/lib/pdf/engine';
+import { pareceSerImagem } from '@/lib/pdf/guards';
 import { loadPdfJs, loadPdfLib } from '@/lib/pdf/lazy';
 import { validarFila } from '@/lib/pdf/guards';
 import {
@@ -51,13 +53,9 @@ const PADRAO: OpcoesImpressao = {
 const ACEITA = [
   'application/pdf',
   '.pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.webp',
+  // A mesma lista do resto do programa: sem isso, o imprimir recusava um
+  // WEBP que a ferramenta de converter abre sem reclamar.
+  ...IMAGE_ACCEPT,
   '.docx',
   '.xlsx',
   '.pptx',
@@ -68,7 +66,7 @@ const ACEITA = [
 function conversaoPara(nome: string): OperationId | null {
   const n = nome.toLowerCase();
   if (n.endsWith('.pdf')) return null;
-  if (/\.(jpe?g|png|webp)$/.test(n)) return 'images-to-pdf';
+  if (pareceSerImagem(n)) return 'images-to-pdf';
   if (n.endsWith('.docx')) return 'word-to-pdf';
   if (n.endsWith('.xlsx')) return 'excel-to-pdf';
   if (n.endsWith('.pptx')) return 'powerpoint-to-pdf';

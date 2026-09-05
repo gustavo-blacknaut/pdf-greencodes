@@ -8,7 +8,7 @@
  */
 
 import { yieldToBrowser } from '../utils';
-import { LIMITES, pareceMesmoDocx, pareceMesmoImagem, pareceMesmoPdf } from './guards';
+import { LIMITES, pareceMesmoDocx, pareceMesmoImagem, pareceMesmoPdf, pareceSerImagem } from './guards';
 import { isPasswordError, openWithPdfJs, openWithPdfLib, renderPageToCanvas } from './nucleo';
 import { split } from './operacoes/organizar';
 import { type LoadedFile, type PaginaParaEditor } from './tipos';
@@ -49,7 +49,9 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
   const ehOfficePeloNome = /\.(docx|xlsx|pptx)$/.test(nomeMinusculo);
   const ehTxtPeloNome = nomeMinusculo.endsWith('.txt');
 
-  if (!base.type.startsWith('image/') && !nomeMinusculo.endsWith('.pdf') && !ehOfficePeloNome && !ehTxtPeloNome) {
+  const ehImagem = pareceSerImagem(nomeMinusculo, base.type);
+
+  if (!ehImagem && !nomeMinusculo.endsWith('.pdf') && !ehOfficePeloNome && !ehTxtPeloNome) {
     return { ...base, error: 'Formato não suportado.' };
   }
 
@@ -58,9 +60,9 @@ export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
 
   // O conteúdo manda, não a extensão nem o MIME informado pelo sistema: os dois
   // são só rótulos e podem estar mentindo. Quem não passa daqui não chega ao parser.
-  if (base.type.startsWith('image/')) {
+  if (ehImagem) {
     if (!pareceMesmoImagem(bytes)) {
-      return { ...base, error: 'O conteúdo não corresponde a uma imagem JPG, PNG ou WebP.' };
+      return { ...base, error: 'Tem nome de imagem, mas o conteúdo não é de nenhum formato de imagem conhecido.' };
     }
     return { ...base, pageCount: 1, thumbnail: await imageThumbnail(file) };
   }

@@ -38,7 +38,8 @@ import { crop, edit, flatten, headerFooter, pageNumbers, resize, watermark } fro
 import { protect, setMetadata, stripMetadata, unlock } from './operacoes/seguranca';
 import { businessCards, cropMarks, labels, mirror, repeatPages, sequentialNumbering } from './operacoes/grafica';
 import { preflight } from './operacoes/verificar';
-import { compressImage, convertImage, heicToImage, resizeImage } from './operacoes/imagem';
+import { boletoParaImpressao, readBoleto } from './operacoes/boleto';
+import { compressImage, convertImage, cropImage, enhanceImage, heicToImage, resizeImage } from './operacoes/imagem';
 import { rodarNoPython, temMotorPython } from './motor-python';
 import type { RunContext, RunResult } from './tipos';
 
@@ -110,6 +111,10 @@ export const OPERATIONS = {
   'resize-image': resizeImage,
   'compress-image': compressImage,
   'heic-to-image': heicToImage,
+  'enhance-image': enhanceImage,
+  'crop-image': cropImage,
+  'read-boleto': readBoleto,
+  'boleto-pdf': boletoParaImpressao,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;

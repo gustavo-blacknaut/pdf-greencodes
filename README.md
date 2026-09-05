@@ -1,6 +1,6 @@
 # PDF.GreenCodes
 
-56 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
+60 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
 Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
 desktop no Windows.
 
@@ -36,7 +36,7 @@ coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois
 
 ---
 
-## As 56 ferramentas
+## As 60 ferramentas
 
 | Organizar | Editar | Converter | Otimizar e cor | Privacidade |
 |---|---|---|---|---|
@@ -76,11 +76,29 @@ E a categoria **Imagem**, que roda inteira no navegador — inclusive no site:
 | **Redimensionar imagem** | por medida, por porcentagem, ou em milímetros no DPI da impressão |
 | **Comprimir imagem** | você diz o peso, ela acha a melhor qualidade que cabe |
 | **HEIC para JPG** | a foto que o iPhone grava desde 2017 e quase nada abre |
+| **Ampliar e melhorar** | reamostragem Lanczos, e não o esticador do Paint |
+| **Cortar imagem** | sem a recompressão que o Paint cobra |
 
-Essas quatro ficam no JavaScript por medição, não por gosto: o motor Python grava só
+Essas seis ficam no JavaScript por medição, não por gosto: o motor Python grava só
 `png, pnm, pgm, ppm, pbm, pam, psd, ps, jpg, jpeg` — **não grava webp**. O Chromium grava,
 decodifica webp e avif, e não custa um byte de instalador. É o inverso do que acontece com PDF.
 O decodificador de HEIC são 2,9 MB e só é baixado quando alguém manda um HEIC.
+
+Ampliar usa **reamostragem Lanczos**, e não o esticador do canvas: o núcleo tem lóbulos negativos,
+e é isso que devolve borda definida em vez de borrão. Cortar não perde nada — a perda que aparece
+no Paint vem de gravar de novo em JPEG, e por isso o padrão aqui sai em PNG.
+
+E a categoria **Boleto**, que é aritmética pura — nada consulta banco nem internet:
+
+| | |
+|---|---|
+| **Ler boleto** | banco, valor, vencimento e conferência dos dígitos, do próprio código |
+| **Boleto para impressão** | carnê e segunda via, a partir do código que o banco emitiu |
+
+O que está no código de barras é banco, valor e vencimento — e é isso que a leitura devolve. Quem
+emitiu e o que foi comprado **não estão lá**, e nenhuma ferramenta tira isso de um código de 44
+dígitos. A impressão monta a folha a partir de um código que o banco já emitiu; ela não cria
+boleto, porque um boleto pagável depende de convênio bancário e registro na CIP.
 
 Mais **Imprimir**, que tem tela própria. Quatro ferramentas só existem no aplicativo — *RGB para
 CMYK*, *Folha de fotos*, *Separar chapas* e *Cobertura de tinta* —, porque dependem do motor
@@ -206,6 +224,15 @@ permissões de impressão e cópia, dividir por tamanho, marca d'água ladrilhad
 Cada um desses tem uma guarda explícita dizendo por quê. A conversa é por linhas de JSON no
 stdin/stdout de um processo só, que sobe uma vez e fica.
 
+```bash
+npm run preparar-motor   # baixa o Python embutido e o PyMuPDF em motor/runtime
+npm run impressora       # compila o executavel de impressao em C#
+```
+
+Os dois geram binário, e binário não entra em repositório: as pastas do runtime e o executável da
+impressora são ignorados pelo git. Quem clona o projeto roda esses dois comandos uma vez e passa a
+conseguir gerar o instalador. Sem eles dá para rodar o site, não o aplicativo.
+
 O Python vai embutido na instalação (distribuição *embeddable*), então **não é preciso ter Python
 na máquina**. Ele fica em `motor/runtime/`, que é ignorado pelo git — quem clona roda o script de
 preparo, e quem instala recebe pronto.
@@ -241,7 +268,7 @@ contrato de 200 KB continua com 200 KB, e não vira 40 MB de imagem.
 npm run dev          # desenvolvimento
 npm run build        # gera out/
 npm run preview      # serve out/ para conferir o build
-npm run verificar    # tamanho dos arquivos + typecheck + os 270 testes
+npm run verificar    # tamanho dos arquivos + typecheck + os 329 testes
 npm run motor        # os 254 testes do motor Python
 npm run impressora   # compila o executavel de impressao em C#
 ```

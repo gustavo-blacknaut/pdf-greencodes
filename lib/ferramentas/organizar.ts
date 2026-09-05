@@ -13,7 +13,7 @@ export const ORGANIZAR: Tool[] = [
     accent: '20 184 166',
     category: 'Organizar',
     accept: [...PDF_ACCEPT, ...IMAGE_ACCEPT],
-    acceptLabel: 'PDF, JPG, PNG ou WebP',
+    acceptLabel: 'PDF ou imagem',
     multiple: true,
     orderable: true,
     cta: 'Juntar arquivos',

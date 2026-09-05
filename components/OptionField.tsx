@@ -180,6 +180,28 @@ export function OptionField({
     return <PasswordField field={field} value={String(value)} onChange={onChange} />;
   }
 
+  // Texto de várias linhas, para o que é colado em lista — um código de
+  // boleto por linha, por exemplo. Num campo de uma linha só, os códigos
+  // grudariam num número gigante e a ferramenta reclamaria da contagem.
+  if (field.type === 'texto-longo') {
+    return (
+      <div>
+        <label className="field-label" htmlFor={`f-${field.key}`}>
+          {field.label}
+        </label>
+        <textarea
+          id={`f-${field.key}`}
+          rows={5}
+          className="input mt-2 font-mono text-[13px] leading-relaxed"
+          placeholder={field.placeholder}
+          value={String(value)}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {field.help && <p className="mt-2 text-xs leading-relaxed text-muted">{field.help}</p>}
+      </div>
+    );
+  }
+
   return (
     <div>
       <label className="field-label" htmlFor={`f-${field.key}`}>

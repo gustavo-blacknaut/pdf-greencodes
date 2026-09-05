@@ -35,6 +35,7 @@ import {
   AVISO_ARQUIVO_GRANDE,
   LIMITES,
   OperacaoCancelada,
+  pareceSerImagem,
   usarLimitesDoAplicativo,
   validarFila,
 } from '@/lib/pdf/guards';
@@ -182,7 +183,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       const accepted = incoming.filter((file) => {
         const name = file.name.toLowerCase();
         const ehPdf = name.endsWith('.pdf') || file.type === 'application/pdf';
-        const ehImagem = /\.(jpe?g|png|webp)$/.test(name) || file.type.startsWith('image/');
+        const ehImagem = pareceSerImagem(name, file.type);
         const ehOffice = /\.(docx|xlsx|pptx)$/.test(name);
         const ehTxt = name.endsWith('.txt');
         return (
@@ -318,7 +319,10 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   );
   const travados = items.filter((item) => item.data?.locked && !tool.allowLocked).length;
   const busy = items.some((item) => item.loading);
-  const canRun = ready.length > 0 && !busy && travados === 0 && phase !== 'running';
+  // Ferramenta sem arquivo tira a entrada dos campos, então não faz sentido
+  // esperar por uma fila que nunca vai existir.
+  const canRun =
+    (tool.semArquivo || ready.length > 0) && !busy && travados === 0 && phase !== 'running';
   const totalBytes = ready.reduce((sum, item) => sum + item.size, 0);
   const totalPages = ready.reduce((sum, item) => sum + (item.data?.pageCount ?? 0), 0);
 
@@ -553,7 +557,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
 
       {phase === 'done' && result ? (
         <ResultPanel entryId={result.id} result={result.data} elapsedMs={result.elapsed} onReset={reset} />
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && !tool.semArquivo ? (
         <Dropzone
           accept={tool.accept}
                   onEscolhidos={mostrarEscolhidos}
@@ -610,7 +614,15 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
           </div>
         )
       ) : (
-        <div className="grid min-w-0 gap-5 lg:grid-cols-[1.15fr_1fr] lg:items-start">
+        <div
+          className={cx(
+            'grid min-w-0 gap-5 lg:items-start',
+            // Sem coluna de arquivos, a de opcoes ocupa a largura toda em vez
+            // de ficar espremida ao lado de um vazio.
+            tool.semArquivo ? 'mx-auto max-w-2xl' : 'lg:grid-cols-[1.15fr_1fr]',
+          )}
+        >
+          {!tool.semArquivo && (
           <FilaDeArquivos
             tool={tool}
             items={items}
@@ -627,6 +639,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
             onLendo={marcarLeitura}
             onFalha={descartarMarcadores}
           />
+          )}
 
           {/* Opções + ação */}
           <div className="card min-w-0 space-y-5 p-4 sm:p-5 lg:sticky lg:top-24">
