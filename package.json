@@ -1,6 +1,6 @@
 {
   "name": "pdf-greencodes",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,7 +16,8 @@
     "tamanho": "node scripts/verificar-tamanho.js",
     "verificar": "npm run tamanho && npm run typecheck && npm run test",
     "impressora": "node scripts/compilar-impressora.js",
-    "motor": "motor\\runtime\\python.exe -m pytest motor/testes -q"
+    "motor": "motor\\runtime\\python.exe -m pytest motor/testes -q",
+    "preparar-motor": "node scripts/preparar-motor.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",

@@ -224,6 +224,15 @@ permissões de impressão e cópia, dividir por tamanho, marca d'água ladrilhad
 Cada um desses tem uma guarda explícita dizendo por quê. A conversa é por linhas de JSON no
 stdin/stdout de um processo só, que sobe uma vez e fica.
 
+```bash
+npm run preparar-motor   # baixa o Python embutido e o PyMuPDF em motor/runtime
+npm run impressora       # compila o executavel de impressao em C#
+```
+
+Os dois geram binário, e binário não entra em repositório: as pastas do runtime e o executável da
+impressora são ignorados pelo git. Quem clona o projeto roda esses dois comandos uma vez e passa a
+conseguir gerar o instalador. Sem eles dá para rodar o site, não o aplicativo.
+
 O Python vai embutido na instalação (distribuição *embeddable*), então **não é preciso ter Python
 na máquina**. Ele fica em `motor/runtime/`, que é ignorado pelo git — quem clona roda o script de
 preparo, e quem instala recebe pronto.
