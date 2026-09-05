@@ -12,16 +12,34 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PDFDocument } from '@cantoo/pdf-lib';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { runOperation, type LoadedFile, type OperationId, type RunContext } from './engine';
 import { temMotorPython } from './motor-python';
 import { PonteDeTeste } from './ponte-de-teste';
 
 const RAIZ = process.cwd();
 
+/**
+ * O motor Python vive em `motor/runtime`, que o git ignora — são 40 MB de
+ * distribuição embutida, e quem clona o projeto não recebe.
+ *
+ * Sem esta conferência cada caso ficava dois minutos parado esperando um
+ * processo que nunca sobe, e a suíte inteira levava mais de meia hora para
+ * terminar em falha. Suíte que trava é suíte que ninguém roda.
+ */
+const TEM_MOTOR = existsSync(path.join(RAIZ, 'motor', 'runtime', 'python.exe'));
+const comMotor = TEM_MOTOR ? describe : describe.skip;
+
+if (!TEM_MOTOR) {
+  console.warn('[equivalencia] motor/runtime não está neste checkout: a comparação entre os dois motores foi pulada.');
+}
+
 let ponte: PonteDeTeste;
 let janelaAntes: unknown;
 
 beforeAll(() => {
+  if (!TEM_MOTOR) return;
   ponte = new PonteDeTeste(RAIZ);
   janelaAntes = (globalThis as { window?: unknown }).window;
 });
@@ -105,7 +123,7 @@ const CASOS: Caso[] = [
   { op: 'split', nome: 'dividir', opcoes: { mode: 'every', every: 5 }, paginas: 12 },
 ];
 
-describe('o Python entrega o mesmo que o JavaScript', () => {
+comMotor('o Python entrega o mesmo que o JavaScript', () => {
   for (const caso of CASOS) {
     it(`${caso.nome}`, async () => {
       const entradas = await Promise.all(
@@ -133,7 +151,7 @@ describe('o Python entrega o mesmo que o JavaScript', () => {
  * imagens num canvas, e canvas nao existe em Node. Entao aqui a saida do
  * Python e conferida contra o que se sabe que ela tem que ser.
  */
-describe('juntar, so no Python', () => {
+comMotor('juntar, so no Python', () => {
   it('empilha as paginas dos tres arquivos, na ordem', async () => {
     const entradas = await Promise.all([pdfDe(2), pdfDe(3), pdfDe(4)]);
 

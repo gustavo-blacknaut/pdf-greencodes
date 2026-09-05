@@ -24,42 +24,11 @@ import {
   type FormatoDeSaida,
   type Medida,
 } from '../../imagem/medidas';
+import { decodificarImagem, type Decodificada } from '../../imagem/decodificar';
 import { realcar, recortar, redimensionar, type Bitmap } from '../../imagem/lanczos';
 import { canvasToBlob, zipFiles } from '../nucleo';
 import type { OutputFile, RunContext, RunResult } from '../tipos';
 import { replaceExtension, yieldToBrowser } from '../../utils';
-
-/** Uma imagem decodificada, pronta para desenhar. */
-type Decodificada = { bitmap: ImageBitmap; largura: number; altura: number };
-
-const HEIC = /\.(heic|heif)$/i;
-
-/**
- * Decodifica o arquivo, seja lá o que ele for.
- *
- * HEIC é o formato que o iPhone grava desde 2017, e nem o navegador nem o
- * MuPDF abrem: precisa do libheif, que são quase 3 MB. Por isso ele só é
- * baixado quando alguém realmente manda um HEIC — quem converte um JPG não
- * paga nada por essa possibilidade.
- */
-async function decodificar(arquivo: { name: string; bytes: ArrayBuffer; type: string }): Promise<Decodificada> {
-  let dados: Blob = new Blob([arquivo.bytes], { type: arquivo.type || 'application/octet-stream' });
-
-  if (HEIC.test(arquivo.name) || arquivo.type === 'image/heic' || arquivo.type === 'image/heif') {
-    const { heicTo } = await import('heic-to');
-    dados = await heicTo({ blob: dados, type: 'image/png' });
-  }
-
-  try {
-    const bitmap = await createImageBitmap(dados);
-    return { bitmap, largura: bitmap.width, altura: bitmap.height };
-  } catch {
-    throw new Error(
-      `Não consegui ler "${arquivo.name}". O navegador abre JPG, PNG, WEBP, GIF, BMP e AVIF; ` +
-        'formato fora dessa lista precisa ser salvo como JPG antes.',
-    );
-  }
-}
 
 /** Desenha na medida pedida e grava no formato pedido. */
 async function gravar(
@@ -126,7 +95,7 @@ async function porArquivo(
     const arquivo = ctx.files[i];
     ctx.onProgress(i / ctx.files.length, `${arquivo.name} (${i + 1}/${ctx.files.length})`);
 
-    const imagem = await decodificar(arquivo);
+    const imagem = await decodificarImagem(arquivo);
     try {
       const saida = await trabalho(imagem, arquivo);
       if (saida) saidas.push(saida);
@@ -297,7 +266,9 @@ export async function heicToImage(ctx: RunContext): Promise<RunResult> {
   const formato = formatoValido(ctx.options.formato ?? 'jpeg');
   const qualidade = Math.min(1, Math.max(0.3, Number(ctx.options.qualidade ?? 92) / 100));
 
-  const nenhumHeic = ctx.files.every((a) => !HEIC.test(a.name) && a.type !== 'image/heic' && a.type !== 'image/heif');
+  const ehHeic = (nome: string, tipo: string) =>
+    /\.(heic|heif)$/i.test(nome) || tipo === 'image/heic' || tipo === 'image/heif';
+  const nenhumHeic = ctx.files.every((a) => !ehHeic(a.name, a.type));
   if (nenhumHeic) {
     throw new Error(
       'Nenhum arquivo HEIC na fila. Esta ferramenta é para a foto que sai do iPhone; ' +

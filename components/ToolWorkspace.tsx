@@ -35,6 +35,7 @@ import {
   AVISO_ARQUIVO_GRANDE,
   LIMITES,
   OperacaoCancelada,
+  pareceSerImagem,
   usarLimitesDoAplicativo,
   validarFila,
 } from '@/lib/pdf/guards';
@@ -182,7 +183,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       const accepted = incoming.filter((file) => {
         const name = file.name.toLowerCase();
         const ehPdf = name.endsWith('.pdf') || file.type === 'application/pdf';
-        const ehImagem = /\.(jpe?g|png|webp)$/.test(name) || file.type.startsWith('image/');
+        const ehImagem = pareceSerImagem(name, file.type);
         const ehOffice = /\.(docx|xlsx|pptx)$/.test(name);
         const ehTxt = name.endsWith('.txt');
         return (

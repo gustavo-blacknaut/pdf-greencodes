@@ -72,7 +72,33 @@ export type Tool = {
 };
 
 export const PDF_ACCEPT = ['application/pdf', '.pdf'];
-export const IMAGE_ACCEPT = ['image/jpeg', 'image/png', 'image/webp', '.jpg', '.jpeg', '.png', '.webp'];
+/**
+ * O que conta como imagem na hora de escolher o arquivo.
+ *
+ * Vale tudo que o navegador decodifica, mais o HEIC do iPhone, que entra por
+ * um decodificador carregado so quando aparece um. A lista e generosa de
+ * proposito: recusar no dialogo obriga a pessoa a converter em outro lugar
+ * antes de voltar — e converter e justamente o que o programa faz.
+ */
+export const IMAGE_ACCEPT = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+  'image/gif',
+  'image/bmp',
+  'image/heic',
+  'image/heif',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.avif',
+  '.gif',
+  '.bmp',
+  '.heic',
+  '.heif',
+];
 
 /**
  * As resoluções que as ferramentas de desenho oferecem.

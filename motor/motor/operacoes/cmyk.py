@@ -155,12 +155,21 @@ def rgb_para_cmyk(pedido: Pedido) -> Dict[str, Any]:
 
 
 def _notas(preto: Tuple[int, int, int, int], ajustou: bool, marcou: bool, trocas: int) -> list[str]:
-    notas = ["O texto continua texto e o traço continua traço: nada foi rasterizado."]
+    # A primeira nota precisa dizer o que foi feito com TODAS as cores, e não
+    # só com o preto. Sem ela a lista falava de neutro, de foto e de perfil, e
+    # dava a entender que o vermelho e o azul tinham ficado em RGB — quando na
+    # verdade a página inteira foi convertida.
+    notas = [
+        "Todas as cores foram para CMYK: vermelho, azul, verde, o texto, o traço e as fotos de dentro. "
+        "Na tela elas continuam parecidas de propósito — conversão boa preserva a aparência; o que muda "
+        "é a receita de tinta por baixo.",
+        "O texto continua texto e o traço continua traço: nada foi rasterizado.",
+    ]
 
     if ajustou:
         receita = f"C{preto[0]} M{preto[1]} Y{preto[2]} K{preto[3]}"
         notas.append(
-            f"{trocas} cores neutras foram corrigidas: preto puro saiu em {receita} e os cinzas só na chapa preta. "
+            f"Dessas, {trocas} eram neutras e receberam a receita da casa: preto puro em {receita} e os cinzas só na chapa preta. "
             "A conversão por perfil, sozinha, mandaria preto para C72 M67 Y67 K88 — quatro tintas para fazer o que uma faz, "
             "e franja colorida em texto fino se as chapas desalinharem."
         )

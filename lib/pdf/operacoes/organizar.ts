@@ -2,9 +2,11 @@
 
 /** Mexer na ordem, na quantidade e no arranjo das páginas. */
 
-import { PAGE_SIZES, copy, desenharPaginaDeImagem, mmParaPt, openWithPdfLib, pintarFundoBranco, respirar, salvarPdf, senhaDaFila, tamanhoDaPagina } from '../nucleo';
+import { PAGE_SIZES, desenharPaginaDeImagem, mmParaPt, openWithPdfLib, pintarFundoBranco, respirar, salvarPdf, senhaDaFila, tamanhoDaPagina } from '../nucleo';
 import { type OutputFile, type PagePlanItem, type RunContext, type RunResult } from '../tipos';
 import { parsePageRange, suffixName, yieldToBrowser } from '../../utils';
+import { pareceSerImagem } from '../guards';
+import { decodificarImagem } from '../../imagem/decodificar';
 import { loadPdfLib } from '../lazy';
 
 export async function merge(ctx: RunContext): Promise<RunResult> {
@@ -22,15 +24,20 @@ export async function merge(ctx: RunContext): Promise<RunResult> {
     inputBytes += source.size;
     ctx.onProgress(i / ctx.files.length, `Juntando ${source.name}`);
 
-    if (source.type.startsWith('image/')) {
+    if (pareceSerImagem(source.name, source.type)) {
       // Foto entra como página inteira, na mesma ordem em que foi solta.
-      const bitmap = await createImageBitmap(new Blob([copy(source.bytes)], { type: source.type }));
+      //
+      // A conversão acontece aqui, sozinha: quem solta um PNG no meio de PDFs
+      // não quer converter antes num outro lugar. Pelo nome e pelo tipo, e não
+      // só pelo tipo — o diálogo do Windows entrega `File.type` vazio, e era
+      // isso que fazia um PNG ser recusado com "Formato não suportado".
+      const imagem = await decodificarImagem(source);
       const pagina =
         formatoImagem === 'imagem'
-          ? { largura: bitmap.width, altura: bitmap.height, seguirImagem: true }
-          : tamanhoDaPagina({ formato: 'a4', orientacao: 'auto' }, bitmap.width, bitmap.height);
-      await desenharPaginaDeImagem(out, canvas, bitmap, pagina, 0, 'proporcao');
-      bitmap.close();
+          ? { largura: imagem.largura, altura: imagem.altura, seguirImagem: true }
+          : tamanhoDaPagina({ formato: 'a4', orientacao: 'auto' }, imagem.largura, imagem.altura);
+      await desenharPaginaDeImagem(out, canvas, imagem.bitmap, pagina, 0, 'proporcao');
+      imagem.bitmap.close();
       imagens += 1;
     } else {
       const doc = await openWithPdfLib(source.bytes, source.senha);
