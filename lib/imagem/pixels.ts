@@ -115,7 +115,7 @@ export function ajustar(imagem: Bitmap, ajustes: Partial<Ajustes> = {}): Bitmap 
 
 // ----------------------------------------------------------------- cor ---
 
-export type ModoDeCor = 'cinza' | 'sepia' | 'pb';
+export type ModoDeCor = 'cinza' | 'sepia' | 'pb' | 'negativo';
 
 /**
  * O limiar que separa preto de branco, escolhido pela própria imagem.
@@ -171,13 +171,23 @@ export function histogramaDeBrilho(imagem: Bitmap): Uint32Array {
   return histograma;
 }
 
-/** Cinza, sépia ou preto e branco puro. */
+/** Cinza, sépia, preto e branco puro, ou negativo. */
 export function trocarCor(imagem: Bitmap, modo: ModoDeCor): Bitmap {
   const saida = copiar(imagem);
   const dados = saida.dados;
   const limiar = modo === 'pb' ? limiarDeOtsu(histogramaDeBrilho(imagem)) : 0;
 
   for (let i = 0; i < dados.length; i += 4) {
+    // O negativo é por canal, e não pela luminância: inverter só o brilho
+    // devolveria uma imagem em tons de cinza invertidos, e o que se espera de
+    // um negativo é que o vermelho vire ciano.
+    if (modo === 'negativo') {
+      dados[i] = 255 - dados[i];
+      dados[i + 1] = 255 - dados[i + 1];
+      dados[i + 2] = 255 - dados[i + 2];
+      continue;
+    }
+
     const cinza = luminancia(dados[i], dados[i + 1], dados[i + 2]);
 
     if (modo === 'cinza') {
