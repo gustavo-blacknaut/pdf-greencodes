@@ -78,7 +78,11 @@ export async function adjustImage(ctx: RunContext): Promise<RunResult> {
   if (ajustes.contraste) mudou.push(`contraste ${ajustes.contraste > 0 ? '+' : ''}${ajustes.contraste}`);
   if (ajustes.saturacao) mudou.push(`saturação ${ajustes.saturacao > 0 ? '+' : ''}${ajustes.saturacao}`);
   if (ajustes.gama !== 1) mudou.push(`meio-tom ${ajustes.gama}`);
-  if (modoDeCor !== 'nenhum') mudou.push({ cinza: 'tons de cinza', sepia: 'sépia', pb: 'preto e branco' }[modoDeCor] ?? modoDeCor);
+  if (modoDeCor !== 'nenhum') {
+    mudou.push(
+      { cinza: 'tons de cinza', sepia: 'sépia', pb: 'preto e branco', negativo: 'negativo' }[modoDeCor] ?? modoDeCor,
+    );
+  }
 
   const notas = [mudou.length ? `Aplicado: ${mudou.join(', ')}.` : 'Nenhum ajuste foi pedido: a imagem saiu como entrou.'];
   if (modoDeCor === 'pb') {

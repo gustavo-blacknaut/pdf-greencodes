@@ -391,6 +391,7 @@ export const IMAGEM: Tool[] = [
           { value: 'cinza', label: 'Tons de cinza', hint: 'com os pesos que o olho usa, e não a média dos canais' },
           { value: 'sepia', label: 'Sépia', hint: 'o virado de tom da foto antiga' },
           { value: 'pb', label: 'Preto e branco puro', hint: 'só duas cores; para fotocópia e carimbo' },
+          { value: 'negativo', label: 'Negativo', hint: 'inverte a cor, canal por canal' },
         ],
       },
       FORMATO_DE_SAIDA,

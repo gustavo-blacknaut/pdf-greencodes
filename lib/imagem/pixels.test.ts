@@ -146,6 +146,23 @@ describe('cor', () => {
     expect(r).toBeGreaterThan(b);
   });
 
+  it('o negativo inverte canal por canal, e não só o brilho', () => {
+    // Invertendo só a luminância, a imagem voltaria em cinza. O que se espera
+    // de um negativo é o vermelho virar ciano.
+    const saida = trocarCor(cheio(2, 2, [255, 0, 0]), 'negativo');
+    expect(pixel(saida, 0, 0)).toEqual([0, 255, 255, 255]);
+  });
+
+  it('dois negativos devolvem a imagem original', () => {
+    const original = bitmap(3, 3, (x, y) => [x * 40, y * 40, 90]);
+    const voltou = trocarCor(trocarCor(original, 'negativo'), 'negativo');
+    expect(Array.from(voltou.dados)).toEqual(Array.from(original.dados));
+  });
+
+  it('o negativo não mexe na transparência', () => {
+    expect(pixel(trocarCor(cheio(2, 2, [10, 20, 30, 128]), 'negativo'), 0, 0)[3]).toBe(128);
+  });
+
   it('o preto e branco só devolve 0 e 255', () => {
     const original = bitmap(4, 4, (x, y) => {
       const v = (x + y) * 30;
