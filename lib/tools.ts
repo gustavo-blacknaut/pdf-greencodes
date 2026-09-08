@@ -6,6 +6,7 @@
  * interface usa para ler o catálogo.
  */
 
+import { CODIGOS } from './ferramentas/codigos';
 import { CONVERTER } from './ferramentas/converter';
 import { EDITAR } from './ferramentas/editar';
 import { GRAFICA } from './ferramentas/grafica';
@@ -25,7 +26,7 @@ export type { BoardMode, Field, FieldBase, Tool } from './ferramentas/tipos';
  * usadas vêm primeiro. Ferramenta fora desta lista entra no fim, então
  * esquecer de incluir não some com ela da tela.
  */
-const ORDEM = [
+export const ORDEM = [
   'imprimir',
   'comprimir-pdf',
   'juntar-pdf',
@@ -38,8 +39,15 @@ const ORDEM = [
   'marcas-de-corte',
   'cartao-de-visita',
   'etiquetas',
+  'gerar-qrcode',
+  'gerar-codigo-barras',
   'numeracao-sequencial',
   'folha-de-fotos',
+  'cartaz-em-partes',
+  'adicionar-sangria',
+  'marcas-de-dobra',
+  'frente-e-verso',
+  'carimbar-logo',
   'separar-chapas',
   'cobertura-de-tinta',
   'verificar-impressao',
@@ -51,6 +59,13 @@ const ORDEM = [
   'heic-para-jpg',
   'melhorar-imagem',
   'cortar-imagem',
+  'remover-fundo',
+  'ajustar-imagem',
+  'limpar-digitalizacao',
+  'girar-imagem',
+  'juntar-imagens',
+  'moldura-imagem',
+  'marca-dagua-imagem',
   'ler-boleto',
   'imprimir-boleto',
   'girar-pdf',
@@ -88,7 +103,17 @@ const ORDEM = [
   'texto-para-pdf',
 ];
 
-const CATALOGO = [...CONVERTER, ...OTIMIZAR, ...ORGANIZAR, ...EDITAR, ...GRAFICA, ...IMAGEM, ...BOLETO, ...PRIVACIDADE];
+const CATALOGO = [
+  ...CONVERTER,
+  ...OTIMIZAR,
+  ...ORGANIZAR,
+  ...EDITAR,
+  ...GRAFICA,
+  ...IMAGEM,
+  ...CODIGOS,
+  ...BOLETO,
+  ...PRIVACIDADE,
+];
 
 export const TOOLS: Tool[] = [...CATALOGO].sort(
   (a, b) =>
@@ -100,7 +125,17 @@ export const TOOLS: Tool[] = [...CATALOGO].sort(
  */
 export const TOOLS_DO_SITE: Tool[] = TOOLS.filter((tool) => !tool.soNoAplicativo);
 
-export const CATEGORIES = ['Otimizar', 'Organizar', 'Converter', 'Editar', 'Gráfica', 'Imagem', 'Boleto', 'Privacidade'] as const;
+export const CATEGORIES = [
+  'Otimizar',
+  'Organizar',
+  'Converter',
+  'Editar',
+  'Gráfica',
+  'Imagem',
+  'Códigos',
+  'Boleto',
+  'Privacidade',
+] as const;
 
 /** Onde a ferramenta vive. A de impressão tem página própria. */
 export function rotaDaFerramenta(tool: Tool, base: '' | '/app' = ''): string {
@@ -127,5 +162,7 @@ export function defaultOptions(tool: Tool): Record<string, string | number | boo
 
 export function isFieldVisible(field: Field, values: Record<string, string | number | boolean>): boolean {
   if (!field.showIf) return true;
-  return String(values[field.showIf.key]) === String(field.showIf.equals);
+  const atual = String(values[field.showIf.key]);
+  const aceitos = Array.isArray(field.showIf.equals) ? field.showIf.equals : [field.showIf.equals];
+  return aceitos.some((valor) => String(valor) === atual);
 }

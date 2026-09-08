@@ -45,7 +45,7 @@ function folhaEmPontos(opcoes: Record<string, string | number | boolean>): { lar
 
 // ------------------------------------------------------------ rotação ---
 
-type PdfDoc = Awaited<ReturnType<typeof openWithPdfLib>>;
+export type PdfDoc = Awaited<ReturnType<typeof openWithPdfLib>>;
 
 /**
  * Devolve o documento sem `/Rotate`, com o giro já aplicado no desenho.
@@ -62,7 +62,7 @@ type PdfDoc = Awaited<ReturnType<typeof openWithPdfLib>>;
  *
  * Documento que já está reto volta como veio, sem custo nenhum.
  */
-async function semGiro(doc: PdfDoc): Promise<PdfDoc> {
+export async function semGiro(doc: PdfDoc): Promise<PdfDoc> {
   const paginas = doc.getPages();
   const giroDe = (i: number) => ((((paginas[i].getRotation().angle % 360) + 360) % 360));
   if (paginas.every((_, i) => giroDe(i) === 0)) return doc;

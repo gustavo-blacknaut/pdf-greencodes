@@ -14,6 +14,7 @@ import { abortarSePreciso } from '../guards';
 import { type OcrLanguage, createOcrWorker } from '../ocr';
 import { split } from './organizar';
 import { loadPdfJs, loadPdfLib } from '../lazy';
+import { decodificarImagem } from '../../imagem/decodificar';
 
 export async function pdfToImages(ctx: RunContext): Promise<RunResult> {
   const source = ctx.files[0];
@@ -69,8 +70,18 @@ export async function imagesToPdf(ctx: RunContext): Promise<RunResult> {
     inputBytes += source.size;
     ctx.onProgress(i / ctx.files.length, `Convertendo ${source.name}`);
 
-    const bitmap = await createImageBitmap(new Blob([copy(source.bytes)], { type: source.type }));
-    const pagina = tamanhoDaPagina(ctx.options, bitmap.width, bitmap.height);
+    /*
+     * Pelo decodificador compartilhado, e não por um `createImageBitmap`
+     * próprio.
+     *
+     * Este era o quarto portão que decidia sozinho o que é imagem, e ficou
+     * de fora quando os outros três foram corrigidos. Ele custava duas
+     * coisas: o HEIC do iPhone não abria — e foto de iPhone é o que mais
+     * chega no balcão de uma gráfica —, e quando não abria a mensagem era um
+     * erro cru do navegador, sem dizer sequer qual arquivo tinha falhado.
+     */
+    const { bitmap, largura, altura } = await decodificarImagem(source);
+    const pagina = tamanhoDaPagina(ctx.options, largura, altura);
 
     await desenharPaginaDeImagem(out, canvas, bitmap, pagina, margem, ajuste);
     bitmap.close();

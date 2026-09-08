@@ -10,8 +10,16 @@ export type FieldBase = {
   key: string;
   label: string;
   help?: string;
-  /** Só aparece quando outro campo tem determinado valor. */
-  showIf?: { key: string; equals: string | number | boolean };
+  /**
+   * Só aparece quando outro campo tem determinado valor.
+   *
+   * `equals` aceita uma lista porque há campo que serve a mais de um modo — o
+   * tamanho em milímetros vale tanto para o PDF quanto para a folha de
+   * etiquetas, e não para o PNG. A alternativa seria repetir o campo com a
+   * mesma chave duas vezes, o que dá dois elementos com a mesma identidade na
+   * tela e um aviso do React em toda renderização.
+   */
+  showIf?: { key: string; equals: string | number | boolean | (string | number | boolean)[] };
 };
 
 export type Field =
@@ -41,7 +49,7 @@ export type Tool = {
   description: string;
   icon: string;
   accent: string;
-  category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Boleto' | 'Gráfica' | 'Imagem' | 'Privacidade';
+  category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Boleto' | 'Gráfica' | 'Imagem' | 'Códigos' | 'Privacidade';
   accept: string[];
   acceptLabel: string;
   multiple: boolean;
