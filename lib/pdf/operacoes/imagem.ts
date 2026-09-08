@@ -24,11 +24,13 @@ import {
   type FormatoDeSaida,
   type Medida,
 } from '../../imagem/medidas';
-import { decodificarImagem, type Decodificada } from '../../imagem/decodificar';
-import { realcar, recortar, redimensionar, type Bitmap } from '../../imagem/lanczos';
-import { canvasToBlob, zipFiles } from '../nucleo';
+import { type Decodificada } from '../../imagem/decodificar';
+import { gravarPixels, pixelsDe } from '../../imagem/canvas';
+import { realcar, recortar, redimensionar } from '../../imagem/lanczos';
+import { canvasToBlob } from '../nucleo';
+import { entregar, porArquivo } from './imagem-fila';
 import type { OutputFile, RunContext, RunResult } from '../tipos';
-import { replaceExtension, yieldToBrowser } from '../../utils';
+import { yieldToBrowser } from '../../utils';
 
 /** Desenha na medida pedida e grava no formato pedido. */
 async function gravar(
@@ -55,59 +57,6 @@ async function gravar(
 
   const alvo = FORMATOS_DE_SAIDA[formato];
   return canvasToBlob(canvas, alvo.mime, alvo.temQualidade ? qualidade : undefined);
-}
-
-/** Um arquivo por entrada, ou um .zip quando sai mais de um. */
-async function entregar(
-  ctx: RunContext,
-  saidas: OutputFile[],
-  sufixoDoZip: string,
-  notas: string[],
-): Promise<RunResult> {
-  const inputBytes = ctx.files.reduce((total, a) => total + a.size, 0);
-  const outputBytes = saidas.reduce((total, a) => total + a.blob.size, 0);
-
-  if (saidas.length === 1) {
-    ctx.onProgress(1);
-    return { files: saidas, inputBytes, outputBytes, notes: notas, highlightSavings: true };
-  }
-
-  ctx.onProgress(0.95, 'Compactando em .zip');
-  const zip = await zipFiles(saidas.map((a) => ({ name: a.name, blob: a.blob })));
-  ctx.onProgress(1);
-  return {
-    files: [{ name: replaceExtension(`${sufixoDoZip}.zip`, 'zip'), blob: zip, pages: saidas.length }],
-    inputBytes,
-    outputBytes: zip.size,
-    notes: [`${saidas.length} imagens, entregues num .zip.`, ...notas],
-    highlightSavings: true,
-  };
-}
-
-/** Percorre a fila decodificando, desenhando e liberando cada imagem. */
-async function porArquivo(
-  ctx: RunContext,
-  trabalho: (imagem: Decodificada, arquivo: RunContext['files'][number]) => Promise<OutputFile | null>,
-): Promise<OutputFile[]> {
-  const saidas: OutputFile[] = [];
-
-  for (let i = 0; i < ctx.files.length; i += 1) {
-    const arquivo = ctx.files[i];
-    ctx.onProgress(i / ctx.files.length, `${arquivo.name} (${i + 1}/${ctx.files.length})`);
-
-    const imagem = await decodificarImagem(arquivo);
-    try {
-      const saida = await trabalho(imagem, arquivo);
-      if (saida) saidas.push(saida);
-    } finally {
-      // Sem isto, uma fila de trinta fotos de celular segura trinta bitmaps
-      // na memória ao mesmo tempo, e a máquina fraca da loja trava.
-      imagem.bitmap.close();
-    }
-    await yieldToBrowser();
-  }
-
-  return saidas;
 }
 
 // ------------------------------------------------------------- converter ---
@@ -297,53 +246,6 @@ export async function heicToImage(ctx: RunContext): Promise<RunResult> {
  * intermediária. Nas máquinas da loja isso não é lentidão, é a aba morrendo.
  */
 const MAX_PIXELS = 40_000_000;
-
-/** Do bitmap do navegador para os pixels crus, e de volta. */
-async function pixelsDe(imagem: Decodificada): Promise<Bitmap> {
-  const canvas = document.createElement('canvas');
-  canvas.width = imagem.largura;
-  canvas.height = imagem.altura;
-  const pincel = canvas.getContext('2d', { willReadFrequently: true });
-  if (!pincel) throw new Error('O navegador não deixou ler os pixels da imagem.');
-  pincel.drawImage(imagem.bitmap, 0, 0);
-  const dados = pincel.getImageData(0, 0, imagem.largura, imagem.altura);
-  return { dados: dados.data, largura: imagem.largura, altura: imagem.altura };
-}
-
-async function gravarPixels(mapa: Bitmap, formato: FormatoDeSaida, qualidade: number): Promise<Blob> {
-  const canvas = document.createElement('canvas');
-  canvas.width = mapa.largura;
-  canvas.height = mapa.altura;
-  const pincel = canvas.getContext('2d');
-  if (!pincel) throw new Error('O navegador não deixou desenhar a imagem.');
-
-  // Monta o ImageData pelo contexto, e não pelo construtor: assim o array
-  // de pixels entra sem depender de qual versão do lib do TypeScript está
-  // tipando o construtor.
-  const quadro = pincel.createImageData(mapa.largura, mapa.altura);
-  quadro.data.set(mapa.dados);
-
-  if (FORMATOS_DE_SAIDA[formato].temTransparencia) {
-    pincel.putImageData(quadro, 0, 0);
-    const alvoTransparente = FORMATOS_DE_SAIDA[formato];
-    return canvasToBlob(canvas, alvoTransparente.mime, alvoTransparente.temQualidade ? qualidade : undefined);
-  }
-
-  // Sem transparência: o branco vai por baixo, senão o que era transparente
-  // sai preto. putImageData ignora o que já está desenhado, então os pixels
-  // passam por um canvas intermediário e voltam com drawImage.
-  const porBaixo = document.createElement('canvas');
-  porBaixo.width = mapa.largura;
-  porBaixo.height = mapa.altura;
-  porBaixo.getContext('2d')!.putImageData(quadro, 0, 0);
-
-  pincel.fillStyle = '#ffffff';
-  pincel.fillRect(0, 0, canvas.width, canvas.height);
-  pincel.drawImage(porBaixo, 0, 0);
-
-  const alvo = FORMATOS_DE_SAIDA[formato];
-  return canvasToBlob(canvas, alvo.mime, alvo.temQualidade ? qualidade : undefined);
-}
 
 /**
  * Amplia com Lanczos e realça a borda.

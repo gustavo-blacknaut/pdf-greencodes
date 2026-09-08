@@ -40,6 +40,17 @@ import { businessCards, cropMarks, labels, mirror, repeatPages, sequentialNumber
 import { preflight } from './operacoes/verificar';
 import { boletoParaImpressao, readBoleto } from './operacoes/boleto';
 import { compressImage, convertImage, cropImage, enhanceImage, heicToImage, resizeImage } from './operacoes/imagem';
+import {
+  adjustImage,
+  borderImage,
+  cleanScan,
+  joinImages,
+  removeBackground,
+  rotateImage,
+  watermarkImage,
+} from './operacoes/imagem-editar';
+import { addBleed, foldMarks, frenteEVerso, posterTiles, stampImage } from './operacoes/grafica-extra';
+import { gerarCodigoBarras, gerarQrCode } from './operacoes/codigos';
 import { rodarNoPython, temMotorPython } from './motor-python';
 import type { RunContext, RunResult } from './tipos';
 
@@ -115,6 +126,20 @@ export const OPERATIONS = {
   'crop-image': cropImage,
   'read-boleto': readBoleto,
   'boleto-pdf': boletoParaImpressao,
+  'adjust-image': adjustImage,
+  'rotate-image': rotateImage,
+  'remove-background': removeBackground,
+  'clean-scan': cleanScan,
+  'border-image': borderImage,
+  'watermark-image': watermarkImage,
+  'join-images': joinImages,
+  'poster-tiles': posterTiles,
+  'add-bleed': addBleed,
+  'fold-marks': foldMarks,
+  'front-back': frenteEVerso,
+  'stamp-image': stampImage,
+  'qr-code': gerarQrCode,
+  barcode: gerarCodigoBarras,
 } satisfies Record<string, (ctx: RunContext) => Promise<RunResult>>;
 
 export type OperationId = keyof typeof OPERATIONS;

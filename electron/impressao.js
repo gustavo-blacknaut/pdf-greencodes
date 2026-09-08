@@ -38,15 +38,29 @@ const PAPEL_MM = {
   Tabloid: [279, 432],
 };
 
-/** O nome que o CSS entende. Deixar o @page nomear o papel evita conversão. */
-const PAPEL_CSS = {
-  A3: 'A3',
-  A4: 'A4',
-  A5: 'A5',
-  Legal: 'legal',
-  Letter: 'letter',
-  Tabloid: 'ledger',
-};
+/**
+ * A folha em milímetros, já deitada quando for o caso.
+ *
+ * Aqui morava um mapa de **nomes** de papel para o CSS — `@page { size: A4 }`.
+ * Parecia mais limpo e escondia um defeito que só o papel na mão mostrava:
+ * nome de papel no CSS declara também a **orientação**, e A4 é retrato. Só
+ * que a orientação de verdade vai separada, na chamada do `print`, em
+ * `landscape`.
+ *
+ * Quando a pessoa marcava "deitado", os dois discordavam: o CSS montava as
+ * páginas em retrato, de 210 por 297, e o Windows recebia uma folha deitada,
+ * de 297 por 210. O driver então encolhia o trabalho para caber — por
+ * 210/297, que é 0,707 — e a arte saía com metade da área no meio da folha.
+ * É exatamente uma A5 impressa no meio de uma A4, que foi como o defeito
+ * chegou aqui descrito.
+ *
+ * Dando as duas medidas em milímetros, na ordem certa, não sobra o que
+ * discordar: o CSS e o `print` falam da mesma folha.
+ */
+function folhaEmMm(papel, deitado) {
+  const [largura, altura] = PAPEL_MM[papel] || PAPEL_MM.A4;
+  return deitado ? [altura, largura] : [largura, altura];
+}
 
 async function preparar() {
   const id = `greencodes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -92,20 +106,27 @@ const AJUSTES = {
 /**
  * Uma folha por imagem.
  *
- * O tamanho vem em porcentagem da folha, e não em milímetros. Com milímetros
- * o resultado saía na metade do papel: o Chromium monta a página no tamanho
- * pedido, descobre que ela não cabe na área imprimível — que é menor que o
- * papel, por causa da margem física da impressora — e encolhe tudo para
- * caber. Uma A4 declarada em milímetros virava uma A5 no meio da folha.
+ * Duas regras seguram o tamanho, e as duas foram aprendidas errando:
  *
- * Em porcentagem não há o que encolher: a caixa já é do tamanho da página que
- * o próprio Chromium montou a partir do papel escolhido.
+ * 1. **A folha do CSS é a folha do `print`, medida em milímetros e na mesma
+ *    orientação.** Nome de papel — `size: A4` — traz orientação junto e
+ *    briga com o `landscape` da chamada; quando os dois discordam, o driver
+ *    encolhe o trabalho para caber e a arte sai pequena no meio do papel.
+ *
+ * 2. **A margem é recuo por dentro da folha, e não margem de `@page`.** Com
+ *    margem no `@page`, a caixa da página encolhe mas a folha continua
+ *    pedindo a altura inteira, e cada página transborda um pouco para a
+ *    seguinte — o que enche a impressão de folhas quase em branco.
+ *
+ * Com a folha valendo exatamente uma página, e o recuo por dentro dela, não
+ * sobra nada para o Chromium nem para o driver interpretarem.
  */
 function montarHtml(paginas, papel, opcoes = {}) {
   const limitar = (valor) => Math.min(Math.max(Number(valor) || 0, 0), 40);
   const lados = limitar(opcoes.margemLadosMm);
   const cima = limitar(opcoes.margemCimaMm);
   const encaixe = AJUSTES[opcoes.ajuste] || AJUSTES.pagina;
+  const [folhaL, folhaA] = folhaEmMm(papel, Boolean(opcoes.paisagem));
 
   // O nome do trabalho na fila da impressora sai daqui. Sem isto aparecia o
   // nome do arquivo temporário, e a fila mostrava 'folhas.html'.
@@ -125,13 +146,15 @@ function montarHtml(paginas, papel, opcoes = {}) {
 <meta charset="utf-8">
 <title>${titulo}</title>
 <style>
-  @page { size: ${PAPEL_CSS[papel] || "A4"}; margin: ${cima}mm ${lados}mm; }
+  @page { size: ${folhaL}mm ${folhaA}mm; margin: 0; }
   html, body { margin: 0; padding: 0; background: #fff; }
 
-  /* 100% da caixa da página, que já desconta a margem do @page. */
+  /* A folha é a página inteira, e a margem é recuo por dentro dela. */
   .folha {
-    width: 100%;
-    height: 100vh;
+    width: ${folhaL}mm;
+    height: ${folhaA}mm;
+    padding: ${cima}mm ${lados}mm;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -37,35 +37,62 @@ describe('HTML de impressão', () => {
   });
 
   /*
-   * O tamanho tem que sair em porcentagem. Em milímetros o Chromium montava
-   * a página maior que a área imprimível e encolhia tudo: uma A4 saía do
-   * tamanho de uma A5, no meio da folha.
+   * O `@page` tem que dar as duas medidas em milímetros, e não o nome do
+   * papel.
+   *
+   * Nome de papel traz a orientação junto — `A4` é retrato — enquanto a
+   * orientação de verdade vai separada, no `landscape` da chamada do print.
+   * Quando os dois discordavam, o driver encolhia o trabalho para caber por
+   * 210/297, e a arte saía com metade da área no meio da folha: uma A5
+   * impressa numa A4, que foi como o defeito chegou aqui.
    */
-  it('dimensiona em porcentagem da folha, e não em milímetros', () => {
+  it('dá a folha em milímetros, e não pelo nome do papel', () => {
     const html = montarHtml([folha(1)], 'A4');
-    expect(html).toContain('width: 100%');
-    expect(html).toContain('height: 100vh');
-    expect(html).not.toMatch(/width: d+mm/);
-    expect(html).not.toMatch(/height: d+mm/);
+    expect(html).toContain('size: 210mm 297mm');
+    expect(html).not.toMatch(/size:\s*A4\s*;/);
   });
 
-  it('nomeia o papel para o CSS, em vez de dar medidas', () => {
-    expect(montarHtml([folha(1)], 'A4')).toContain('size: A4;');
-    expect(montarHtml([folha(1)], 'Legal')).toContain('size: legal;');
-    expect(montarHtml([folha(1)], 'Tabloid')).toContain('size: ledger;');
+  it('a folha do CSS mede o mesmo que o papel escolhido', () => {
+    expect(montarHtml([folha(1)], 'A3')).toContain('size: 297mm 420mm');
+    expect(montarHtml([folha(1)], 'A5')).toContain('size: 148mm 210mm');
+    expect(montarHtml([folha(1)], 'Legal')).toContain('size: 216mm 356mm');
+    expect(montarHtml([folha(1)], 'Tabloid')).toContain('size: 279mm 432mm');
+  });
+
+  it('deitado troca as medidas, para o CSS não brigar com o driver', () => {
+    // É a correção do defeito: sem a troca, o CSS monta 210x297 enquanto o
+    // Windows alimenta 297x210, e o trabalho é encolhido para caber.
+    const html = montarHtml([folha(1)], 'A4', { paisagem: true });
+    expect(html).toContain('size: 297mm 210mm');
+    expect(html).toContain('width: 297mm');
+    expect(html).toContain('height: 210mm');
+  });
+
+  it('a folha ocupa a página inteira, sem sobrar nem transbordar', () => {
+    const html = montarHtml([folha(1)], 'A4');
+    expect(html).toContain('width: 210mm');
+    expect(html).toContain('height: 297mm');
+    // Nada de `vh`: em impressão a unidade se resolve contra a página com
+    // margem incluída, e a folha passava a transbordar para a seguinte.
+    expect(html).not.toContain('vh');
   });
 
   it('cai em A4 quando o papel é desconhecido', () => {
-    expect(montarHtml([folha(1)], 'Inventado')).toContain('size: A4;');
+    expect(montarHtml([folha(1)], 'Inventado')).toContain('size: 210mm 297mm');
   });
 
-  it('põe a margem no @page, que é onde ela vale', () => {
+  it('a margem é recuo por dentro da folha, e não margem de @page', () => {
+    // Com margem no @page a caixa da página encolhe, mas a folha continua
+    // pedindo a altura cheia: cada página transbordava um pouco na seguinte
+    // e a impressão enchia de folhas quase em branco.
     const html = montarHtml([folha(1)], 'A4', { margemLadosMm: 10, margemCimaMm: 5 });
-    expect(html).toContain('margin: 5mm 10mm');
+    expect(html).toContain('@page { size: 210mm 297mm; margin: 0; }');
+    expect(html).toContain('padding: 5mm 10mm');
+    expect(html).toContain('box-sizing: border-box');
   });
 
   it('limita a margem para ela não comer a folha', () => {
-    expect(montarHtml([folha(1)], 'A4', { margemLadosMm: 999 })).toContain('margin: 0mm 40mm');
+    expect(montarHtml([folha(1)], 'A4', { margemLadosMm: 999 })).toContain('padding: 0mm 40mm');
   });
 
   it('traduz o ajuste para o encaixe do CSS', () => {
