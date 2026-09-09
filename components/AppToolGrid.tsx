@@ -4,18 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { CATEGORIES, TOOLS, rotaDaFerramenta, type Tool } from '@/lib/tools';
+import { CATEGORIES, TOOLS, combina, rotaDaFerramenta, type Tool } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { ToolIcon } from './ToolIcon';
 import { cx } from '@/lib/utils';
-
-/** "compressao" acha "Compressão": busca sem acento e sem caixa. */
-function normalizar(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
 
 export function AppToolGrid() {
   const router = useRouter();
@@ -23,11 +15,10 @@ export function AppToolGrid() {
   const [categoria, setCategoria] = useState('Todas');
 
   const visiveis = useMemo(() => {
-    const termo = normalizar(busca.trim());
+    const termo = busca.trim();
     return TOOLS.filter((tool) => {
       if (categoria !== 'Todas' && tool.category !== categoria) return false;
-      if (!termo) return true;
-      return normalizar(`${tool.name} ${tool.tagline} ${tool.category}`).includes(termo);
+      return combina(tool, termo);
     });
   }, [busca, categoria]);
 

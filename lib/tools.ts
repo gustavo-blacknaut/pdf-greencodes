@@ -160,6 +160,39 @@ export function defaultOptions(tool: Tool): Record<string, string | number | boo
   return values;
 }
 
+/** "compressao" acha "Compressão": sem acento e sem caixa dos dois lados. */
+export function normalizar(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+/**
+ * A ferramenta responde ao que a pessoa digitou?
+ *
+ * Casa palavra por palavra, e não a frase inteira de uma vez. A diferença
+ * apareceu com uma pergunta de verdade: "transforma um pdf em vários" não
+ * achava nada, porque o sinônimo escrito era "transformar" — e "transforma um
+ * pdf" não é um pedaço de "transformar um pdf", por causa do "r" no meio.
+ *
+ * Exigindo que cada palavra apareça em algum lugar, a ordem deixa de importar
+ * ("pdf vários" acha igual), o verbo conjugado acha o infinitivo, e quem
+ * digita meia palavra continua achando enquanto digita.
+ *
+ * Fica aqui, e não na tela, para o teste medir a busca de verdade em vez de
+ * uma cópia dela que pode envelhecer sozinha.
+ */
+export function combina(tool: Tool, termo: string): boolean {
+  const palavras = normalizar(termo).split(/\s+/).filter(Boolean);
+  if (!palavras.length) return true;
+
+  const procuravel = normalizar(
+    `${tool.name} ${tool.tagline} ${tool.category} ${tool.busca?.join(' ') ?? ''}`,
+  );
+  return palavras.every((palavra) => procuravel.includes(palavra));
+}
+
 export function isFieldVisible(field: Field, values: Record<string, string | number | boolean>): boolean {
   if (!field.showIf) return true;
   const atual = String(values[field.showIf.key]);

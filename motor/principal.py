@@ -23,6 +23,17 @@ def principal() -> int:
     # O canal e JSON puro, entao qualquer print solto de biblioteca estragaria
     # a linha. Reconfigurar para UTF-8 evita que acento em nome de arquivo
     # quebre no console do Windows.
+    #
+    # O stdin entra junto, e por muito tempo nao entrava. No Windows ele nasce
+    # em cp1252 com surrogateescape, e o aplicativo escreve UTF-8: os dois
+    # bytes de um "I" com acento chegavam como "A" com til mais um byte 0x8D,
+    # que nao existe em cp1252 e virava um substituto solto. Na volta, esse
+    # substituto nao tinha como ser gravado, e nao era um pedido que falhava:
+    # era o canal que morria com "lost sys.stderr". Dali em diante NENHUMA
+    # ferramenta do motor respondia mais, e o aplicativo nao sabia por que.
+    #
+    # As tres linhas andam juntas. Ver `testes/test_acentos.py`.
+    sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     sys.stderr.reconfigure(encoding="utf-8")
 
