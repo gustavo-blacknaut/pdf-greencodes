@@ -72,7 +72,20 @@ class ErroDoUsuario(Exception):
 
 
 def _escrever(linha: Dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(linha, ensure_ascii=False) + "\n")
+    """Manda uma linha de volta para o aplicativo.
+
+    `ensure_ascii` fica ligado de proposito, e nao e enfeite. Sem ele, um
+    caractere que nao pudesse ser gravado em UTF-8 — um substituto solto,
+    vindo de um nome de arquivo mal decodificado — estourava aqui dentro. E
+    estourar aqui nao e um pedido que falha: e o canal que morre, o motor que
+    sai, e nenhuma ferramenta respondendo mais ate reiniciar o aplicativo.
+
+    Com `ensure_ascii`, o proprio JSON escapa tudo que nao for ASCII, a linha
+    sai gravavel em qualquer situacao, e o `JSON.parse` do outro lado devolve
+    o texto original. O canal deixa de ter como morrer por causa de um nome
+    de arquivo.
+    """
+    sys.stdout.write(json.dumps(linha, ensure_ascii=True) + "\n")
     sys.stdout.flush()
 
 

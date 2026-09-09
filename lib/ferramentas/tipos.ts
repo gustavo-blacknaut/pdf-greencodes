@@ -50,6 +50,18 @@ export type Tool = {
   icon: string;
   accent: string;
   category: 'Otimizar' | 'Organizar' | 'Converter' | 'Editar' | 'Boleto' | 'Gráfica' | 'Imagem' | 'Códigos' | 'Privacidade';
+  /**
+   * Como a pessoa chama a ferramenta quando não sabe o nome dela.
+   *
+   * A busca olha o nome, a chamada e a categoria — e ninguém procura por
+   * "Dividir PDF" quando o que quer é "transformar um PDF em vários". Quem
+   * está no balcão digita o que precisa, não o nome que o programa deu.
+   *
+   * Vale escrever sem acento também quando a palavra costuma ser digitada
+   * assim; a busca já ignora acento dos dois lados, mas escrever o jeito
+   * errado comum ainda ajuda quando ele não é só falta de acento.
+   */
+  busca?: string[];
   accept: string[];
   acceptLabel: string;
   multiple: boolean;
