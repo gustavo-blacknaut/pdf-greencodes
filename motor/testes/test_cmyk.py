@@ -172,16 +172,31 @@ class TestConversaoCompleta:
         # Sem o ajuste, o preto de quadricromia do perfil continua lá.
         assert any(max(c, m, y) - min(c, m, y) <= 12 and k > 80 and c > 50 for c, m, y, k in cores_do_pdf(destino))
 
-    def test_foto_solta_tambem_converte(self, criar_foto_teste, rodar, tmp_path):
-        # Entrada JPG: `abrir` transforma em PDF de uma página antes.
-        destino = str(tmp_path / "foto-cmyk.pdf")
+    def test_foto_solta_sai_foto_e_nao_pdf(self, criar_foto_teste, rodar, tmp_path):
+        """Foto entra, foto sai — e este teste já dizia o contrário.
+
+        A versão anterior mandava uma foto e conferia o resultado abrindo um
+        **PDF**, porque era isso que o programa entregava: o `abrir`
+        transforma imagem em PDF de uma página, e o `salvar` gravava esse PDF
+        com o nome que a pessoa tinha escolhido. Como aqui o nome terminava em
+        `.pdf`, o teste passava e ninguém via problema.
+
+        Na tela o nome terminava em `.png`, e o que chegava para a pessoa era
+        um PDF com extensão de imagem: ícone de arquivo quebrado, sem erro
+        nenhum. O teste estava travando o defeito no lugar.
+        """
+        destino = str(tmp_path / "foto-cmyk.png")
         resultado = rodar("rgb-para-cmyk", [criar_foto_teste()], {}, saida=destino)
         assert resultado["paginas"] == 1
 
-        doc = pymupdf.open(destino)
-        for imagem in doc[0].get_images(full=True):
-            assert doc.extract_image(imagem[0])["colorspace"] == 4
-        doc.close()
+        saida = resultado["arquivo"]
+        assert saida.lower().endswith(".jpg"), "PNG não guarda CMYK: a saída tem que trocar de formato"
+
+        with open(saida, "rb") as arquivo:
+            assert arquivo.read(4)[:4] != b"%PDF", "voltou a gravar PDF com nome de imagem"
+
+        # E os pixels estão mesmo nas quatro tintas.
+        assert pymupdf.Pixmap(saida).n == 4
 
     def test_sem_arquivo_reclama(self, rodar):
         with pytest.raises(ErroDoUsuario, match="nenhum arquivo"):

@@ -22,6 +22,7 @@ tintas para não chapar, e forçar K ali achataria a imagem.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, Tuple
 
@@ -91,6 +92,101 @@ def corrigir_neutros(conteudo: bytes, preto: Tuple[int, int, int, int]) -> Tuple
     return COR_CMYK.sub(trocar, conteudo), trocados
 
 
+# Os formatos que guardam CMYK de verdade, e o que cada um serve.
+#
+# PNG **nao** entra, e nao e escolha: o formato nao tem tipo de cor CMYK. O
+# proprio MuPDF recusa com "unsupported colorspace for 'png'". Gravar um
+# arquivo `.png` numa conversao para CMYK e prometer o impossivel.
+FORMATOS_CMYK = {
+    "jpg": "JPEG com marcador Adobe, quatro componentes. E o que RIP, Photoshop e Illustrator leem.",
+    "psd": "Photoshop, quatro canais separados. Arquivo grande, sem perda.",
+}
+
+EXTENSOES_DE_IMAGEM = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff")
+
+
+def _ehImagem(caminho: str) -> bool:
+    return os.path.splitext(caminho)[1].lower() in EXTENSOES_DE_IMAGEM
+
+
+def _imagem_para_cmyk(pedido: Pedido, origem: str) -> Dict[str, Any]:
+    """Converte os pixels de uma imagem inteira para CMYK.
+
+    Existe porque a ferramenta aceitava foto e entregava lixo: o MuPDF abre
+    JPG e PNG como documento, a conversao rodava em cima disso, e no fim
+    `salvar` gravava um **PDF com nome .png**. O Windows via a extensao,
+    tentava abrir como imagem, e mostrava o icone de arquivo quebrado.
+
+    Aqui cada pixel passa para as quatro tintas — vermelho vira C0 M100 Y100,
+    azul vira C87 M77 Y0, e assim por diante. A imagem e recriada em CMYK, e
+    nao so remarcada.
+
+    A receita da casa para o preto nao se aplica: numa foto, o preto precisa
+    das quatro tintas para nao chapar. Forcar so a chapa preta achataria a
+    sombra inteira num cinza morto. Isso vale para foto; para traco e texto,
+    que e o caso do PDF, a receita continua valendo.
+    """
+    formato = str(pedido.opcao("formatoImagem", "jpg")).lower()
+    if formato not in FORMATOS_CMYK:
+        formato = "jpg"
+    qualidade = max(30, min(100, int(pedido.opcao("qualidade", 92))))
+
+    pedido.andamento(0.2, "Lendo a imagem")
+    try:
+        pixels = pymupdf.Pixmap(origem)
+    except Exception as erro:  # noqa: BLE001
+        raise ErroDoUsuario(f"nao consegui ler {os.path.basename(origem)}: {erro}") from erro
+
+    try:
+        # Alfa nao existe em CMYK: o que era transparente vira branco, que e o
+        # papel. Sem tirar antes, a conversao recusa.
+        if pixels.alpha:
+            sem_alfa = pymupdf.Pixmap(pixels, 0)
+            pixels = sem_alfa
+
+        pedido.andamento(0.6, "Convertendo cada pixel para as quatro tintas")
+        em_cmyk = pymupdf.Pixmap(pymupdf.csCMYK, pixels)
+
+        destino = pedido.saida or nome_com_sufixo(origem, "cmyk")
+        # A extensao acompanha o formato de verdade. Era exatamente o que
+        # faltava: o arquivo saia com a extensao da entrada.
+        destino = f"{os.path.splitext(destino)[0]}.{formato}"
+
+        os.makedirs(os.path.dirname(os.path.abspath(destino)) or ".", exist_ok=True)
+        if formato == "jpg":
+            em_cmyk.save(destino, jpg_quality=qualidade)
+        else:
+            em_cmyk.save(destino)
+
+        bytes_saida = os.path.getsize(destino)
+        largura, altura = em_cmyk.width, em_cmyk.height
+    finally:
+        pixels = None
+
+    notas = [
+        f"Todos os pixels foram para CMYK: {largura}x{altura}, quatro canais. "
+        "A imagem foi recriada na cor equivalente, e nao apenas remarcada.",
+        f"Salva em {formato.upper()}. {FORMATOS_CMYK[formato]}",
+    ]
+    if os.path.splitext(origem)[1].lower() == ".png":
+        notas.append(
+            "A entrada era PNG, e PNG nao guarda CMYK — o formato nao tem esse tipo de cor. "
+            f"Por isso o resultado saiu em {formato.upper()}."
+        )
+    notas.append(
+        "O preto da foto ficou nas quatro tintas, como deve: forcar so a chapa preta achataria a sombra."
+    )
+
+    pedido.andamento(1.0)
+    return {
+        "arquivo": destino,
+        "paginas": 1,
+        "bytes": bytes_saida,
+        "trocasDePreto": 0,
+        "notas": notas,
+    }
+
+
 def rgb_para_cmyk(pedido: Pedido) -> Dict[str, Any]:
     """Passa o documento inteiro para CMYK, preservando texto e vetor."""
     if not pedido.arquivos:
@@ -98,6 +194,11 @@ def rgb_para_cmyk(pedido: Pedido) -> Dict[str, Any]:
 
     origem = pedido.arquivos[0]
     senha = pedido.senha(0)
+
+    # Foto e outra conversa: la nao ha texto nem traco para preservar, e o
+    # resultado tem que continuar sendo imagem.
+    if _ehImagem(origem):
+        return _imagem_para_cmyk(pedido, origem)
 
     ajustar_preto = bool(pedido.opcao("ajustarPreto", True))
     preto = PRETO_K100 if str(pedido.opcao("preto", "rico")) == "k100" else PRETO_RICO

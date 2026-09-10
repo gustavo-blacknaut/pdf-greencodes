@@ -101,6 +101,10 @@ const NO_PYTHON: Record<string, Traducao> = {
       preto: String(o.preto ?? 'rico'),
       ajustarPreto: o.ajustarPreto !== false,
       marcarDevice: o.marcarDevice !== false,
+      // Para foto, o que importa é em que formato gravar: PNG não guarda
+      // CMYK, então a saída é JPG ou PSD.
+      formatoImagem: String(o.formatoImagem ?? 'jpg'),
+      qualidade: numero(o.qualidade, 92),
     }),
   },
 
