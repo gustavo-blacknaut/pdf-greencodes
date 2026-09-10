@@ -57,6 +57,25 @@ const PAPEL_MM = {
  * Dando as duas medidas em milímetros, na ordem certa, não sobra o que
  * discordar: o CSS e o `print` falam da mesma folha.
  */
+/**
+ * A folha para o `print`, em microns e sempre em retrato.
+ *
+ * A regra 1 de `montarHtml` diz que o CSS e o `print` têm que falar da
+ * mesma folha. O CSS já falava em milímetros, mas a chamada continuava
+ * mandando o **nome** do papel — e nome carrega orientação e depende da
+ * tabela do Chromium. Quando o driver estava guardado noutro tamanho, ele
+ * encolhia a arte para caber: uma fatura A4 saía do tamanho de uma A5 no
+ * meio da folha.
+ *
+ * Em microns não sobra o que interpretar. Vai em retrato porque o
+ * `landscape` da própria chamada é quem gira a folha; girar aqui também
+ * deixaria a folha de volta em pé.
+ */
+function folhaEmMicrons(papel) {
+  const [largura, altura] = PAPEL_MM[papel] || PAPEL_MM.A4;
+  return { width: Math.round(largura * 1000), height: Math.round(altura * 1000) };
+}
+
 function folhaEmMm(papel, deitado) {
   const [largura, altura] = PAPEL_MM[papel] || PAPEL_MM.A4;
   return deitado ? [altura, largura] : [largura, altura];
@@ -383,7 +402,7 @@ async function enviar({ id, opcoes, nome }) {
           copies: Math.max(1, Math.min(99, Number(config.copias) || 1)),
           landscape: Boolean(config.paisagem),
           duplexMode: config.duplex || 'simplex',
-          pageSize: config.papel || 'A4',
+          pageSize: folhaEmMicrons(config.papel),
           dpi: { horizontal: Number(config.dpi) || 300, vertical: Number(config.dpi) || 300 },
           // A margem já está no @page do HTML; deixar o Chromium somar a
           // dele daria margem em cima de margem.

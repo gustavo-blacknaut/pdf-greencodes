@@ -20,6 +20,10 @@ const fonte = fs.readFileSync(path.join(__dirname, 'impressao.js'), 'utf8');
 const corpo = fonte.slice(fonte.indexOf('const PAPEL_MM'), fonte.indexOf('async function preparar'));
 const montar = fonte.slice(fonte.indexOf('const AJUSTES'), fonte.indexOf('/** Espera as imagens'));
 const montarHtml = new Function('path', `${corpo}\n${montar}\nreturn montarHtml;`)(path);
+const folhaEmMicrons = new Function(`${corpo}
+return folhaEmMicrons;`)();
+const folhaEmMm = new Function(`${corpo}
+return folhaEmMm;`)();
 
 const folha = (n) => path.join(os.tmpdir(), 'sessao', `${String(n).padStart(4, '0')}.jpg`);
 
@@ -184,5 +188,46 @@ describe('escala, posição e marcas', () => {
     const html = montarHtml([folha(1)], 'A4', { marcasCorte: true });
     expect(html).toContain('window.__posicionar = function');
     expect(html).not.toMatch(/\n\s*posicionar\(\{/);
+  });
+});
+
+/**
+ * O tamanho que vai na chamada do `print`.
+ *
+ * O defeito que estes testes prendem: a chamada mandava o **nome** do papel
+ * enquanto o CSS já falava em milímetros. Nome depende da tabela do Chromium
+ * e carrega orientação; quando o driver estava guardado noutro tamanho, ele
+ * encolhia a arte para caber, e a folha A4 saía com uma A5 impressa no meio.
+ */
+describe('folha do print', () => {
+  it('mede A4 em microns, não pelo nome', () => {
+    expect(folhaEmMicrons('A4')).toEqual({ width: 210000, height: 297000 });
+  });
+
+  it('cai em A4 quando o papel é desconhecido', () => {
+    expect(folhaEmMicrons('inexistente')).toEqual({ width: 210000, height: 297000 });
+    expect(folhaEmMicrons(undefined)).toEqual({ width: 210000, height: 297000 });
+  });
+
+  it('vai sempre em retrato, porque quem gira é o landscape da chamada', () => {
+    const a4 = folhaEmMicrons('A4');
+    expect(a4.height).toBeGreaterThan(a4.width);
+  });
+
+  it('fala da mesma folha que o CSS', () => {
+    for (const papel of ['A3', 'A4', 'A5', 'Legal', 'Letter', 'Tabloid']) {
+      const [larguraMm, alturaMm] = folhaEmMm(papel, false);
+      const microns = folhaEmMicrons(papel);
+      expect(microns.width).toBe(larguraMm * 1000);
+      expect(microns.height).toBe(alturaMm * 1000);
+    }
+  });
+
+  it('não confunde A4 com A5', () => {
+    const a4 = folhaEmMicrons('A4');
+    const a5 = folhaEmMicrons('A5');
+    expect(a4).not.toEqual(a5);
+    // A5 é metade da A4: é essa razão que aparecia na folha impressa.
+    expect(a5.height).toBe(a4.width);
   });
 });

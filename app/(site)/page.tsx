@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, CloudOff, Gauge, Layers, Timer, WifiOff } from 'lucide-react';
 import { ToolGrid } from '@/components/ToolGrid';
-import { TOOLS } from '@/lib/tools';
+import { TOOLS_DO_SITE } from '@/lib/tools';
 
 export default function HomePage() {
   return (
@@ -42,7 +42,7 @@ export default function HomePage() {
               Comprimir um PDF <ArrowRight className="h-4 w-4" />
             </Link>
             <Link href="#ferramentas" className="btn-ghost px-6 py-3 text-[15px]">
-              Ver as {TOOLS.length} ferramentas
+              Ver as {TOOLS_DO_SITE.length} ferramentas
             </Link>
           </div>
 
@@ -52,7 +52,7 @@ export default function HomePage() {
           >
             {[
               { icon: Gauge, value: '0 ms', label: 'de espera em fila' },
-              { icon: Layers, value: String(TOOLS.length), label: 'ferramentas' },
+              { icon: Layers, value: String(TOOLS_DO_SITE.length), label: 'ferramentas' },
               { icon: Timer, value: '10 min', label: 'de vida do resultado' },
               { icon: WifiOff, value: '0 KB', label: 'enviados à rede' },
             ].map((stat) => (

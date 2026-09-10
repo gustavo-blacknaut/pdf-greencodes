@@ -1,6 +1,6 @@
 # PDF.GreenCodes
 
-60 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
+70 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
 Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
 desktop no Windows.
 
@@ -36,7 +36,7 @@ coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois
 
 ---
 
-## As 60 ferramentas
+## As 70 ferramentas
 
 | Organizar | Editar | Converter | Otimizar e cor | Privacidade |
 |---|---|---|---|---|
