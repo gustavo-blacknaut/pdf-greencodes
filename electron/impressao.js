@@ -128,6 +128,42 @@ function montarHtml(paginas, papel, opcoes = {}) {
   const encaixe = AJUSTES[opcoes.ajuste] || AJUSTES.pagina;
   const [folhaL, folhaA] = folhaEmMm(papel, Boolean(opcoes.paisagem));
 
+  /*
+   * O que a montagem de gráfica pede, além de "cabe na folha".
+   *
+   * Posicionar em milímetro, escalar por porcentagem, espelhar e marcar o
+   * corte são o serviço entre a arte pronta e a máquina. O `object-fit` do
+   * CSS resolve o "cabe" e mais nada: ele não sabe onde a arte está nem de
+   * que tamanho ela ficou, e sem isso não há como desenhar marca de corte
+   * alinhada com a borda.
+   *
+   * Por isso, quando qualquer um desses entra em jogo, a posição passa a ser
+   * calculada — depois das imagens carregarem, que é quando se sabe o
+   * tamanho real de cada página. A conta em si mora em `lib/impressao/layout`
+   * e é a mesma que a prévia usa; aqui vai uma cópia enxuta dela, porque
+   * este HTML roda solto numa janela sem o pacote do aplicativo.
+   */
+  const posicionado = {
+    escala: String(opcoes.escala ?? 'pagina'),
+    porcento: Number(opcoes.escalaPorcento) || 100,
+    deslocaX: Number(opcoes.deslocaXmm) || 0,
+    deslocaY: Number(opcoes.deslocaYmm) || 0,
+    espelho: String(opcoes.espelho ?? 'nao'),
+    negativo: Boolean(opcoes.negativo),
+    marcasCorte: Boolean(opcoes.marcasCorte),
+    marcasRegistro: Boolean(opcoes.marcasRegistro),
+    dpi: Number(opcoes.dpi) || 300,
+  };
+
+  // Sem nada disso ligado, o caminho antigo continua valendo — é mais simples
+  // e já está provado no papel.
+  const precisaCalcular =
+    posicionado.escala !== 'pagina' ||
+    posicionado.deslocaX !== 0 ||
+    posicionado.deslocaY !== 0 ||
+    posicionado.marcasCorte ||
+    posicionado.marcasRegistro;
+
   // O nome do trabalho na fila da impressora sai daqui. Sem isto aparecia o
   // nome do arquivo temporário, e a fila mostrava 'folhas.html'.
   const titulo = String(opcoes.titulo || 'Documento')
@@ -169,11 +205,130 @@ function montarHtml(paginas, papel, opcoes = {}) {
     width: 100%;
     height: 100%;
     object-fit: ${encaixe};
+    ${posicionado.espelho === 'horizontal' ? 'transform: scaleX(-1);' : ''}
+    ${posicionado.espelho === 'vertical' ? 'transform: scaleY(-1);' : ''}
+    ${posicionado.negativo ? 'filter: invert(1);' : ''}
   }
+
+  /* As marcas ficam por cima da folha, e nunca por cima da arte. */
+  .marca { position: absolute; background: #000; }
+  .alvo {
+    position: absolute;
+    border: 0.25mm solid #000;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .alvo::before, .alvo::after {
+    content: '';
+    position: absolute;
+    background: #000;
+  }
+  .alvo::before { left: 50%; top: -1mm; width: 0.2mm; height: calc(100% + 2mm); margin-left: -0.1mm; }
+  .alvo::after { top: 50%; left: -1mm; height: 0.2mm; width: calc(100% + 2mm); margin-top: -0.1mm; }
 </style>
 ${imagens}
+${
+  precisaCalcular
+    ? `<script>${SCRIPT_DE_POSICAO}
+// Só define. Quem chama é o processo principal, depois de as imagens
+// carregarem: antes disso o tamanho real de cada página é zero, e a conta
+// toda sairia errada em silêncio.
+window.__posicionar = function () { posicionar(${JSON.stringify({ ...posicionado, folhaL, folhaA, lados, cima })}); };
+</script>`
+    : ''
+}
 `;
 }
+
+/**
+ * Posiciona cada arte na folha, depois de as imagens carregarem.
+ *
+ * Roda dentro da janela escondida da impressão, então é texto — não dá para
+ * importar o módulo do aplicativo aqui. A conta é a mesma de
+ * `lib/impressao/layout.ts`, e o teste de lá é que a prende.
+ *
+ * O tamanho real de cada página só se sabe com a imagem carregada: ela é um
+ * raster num DPI conhecido, e é daí que sai o "tamanho original".
+ */
+const SCRIPT_DE_POSICAO = `
+function posicionar(cfg) {
+  var mm = function (v) { return v + 'mm'; };
+  var folhas = document.querySelectorAll('.folha');
+
+  for (var i = 0; i < folhas.length; i++) {
+    var folha = folhas[i];
+    var img = folha.querySelector('img');
+    if (!img || !img.naturalWidth) continue;
+
+    folha.style.position = 'relative';
+    folha.style.padding = '0';
+    folha.style.display = 'block';
+
+    var arteL = (img.naturalWidth / cfg.dpi) * 25.4;
+    var arteA = (img.naturalHeight / cfg.dpi) * 25.4;
+    var dispL = Math.max(1, cfg.folhaL - cfg.lados * 2);
+    var dispA = Math.max(1, cfg.folhaA - cfg.cima * 2);
+
+    var fator;
+    if (cfg.escala === 'preencher') fator = Math.max(dispL / arteL, dispA / arteA);
+    else if (cfg.escala === 'original') fator = 1;
+    else if (cfg.escala === 'porcento') fator = Math.min(Math.max(cfg.porcento, 1), 1000) / 100;
+    else fator = Math.min(dispL / arteL, dispA / arteA);
+
+    var largura = arteL * fator;
+    var altura = arteA * fator;
+    var x = (cfg.folhaL - largura) / 2 + cfg.deslocaX;
+    var y = (cfg.folhaA - altura) / 2 + cfg.deslocaY;
+
+    img.style.position = 'absolute';
+    img.style.left = mm(x);
+    img.style.top = mm(y);
+    img.style.width = mm(largura);
+    img.style.height = mm(altura);
+    img.style.objectFit = 'fill';
+
+    if (cfg.marcasCorte) {
+      var vao = 2, comp = 4, esp = 0.25;
+      var risco = function (left, top, w, h) {
+        var d = document.createElement('div');
+        d.className = 'marca';
+        d.style.left = mm(left); d.style.top = mm(top);
+        d.style.width = mm(w); d.style.height = mm(h);
+        folha.appendChild(d);
+      };
+      var dir = x + largura, bai = y + altura;
+      // Dois riscos por canto, nenhum encostando na arte.
+      risco(x - vao - comp, y - esp / 2, comp, esp);
+      risco(x - esp / 2, y - vao - comp, esp, comp);
+      risco(dir + vao, y - esp / 2, comp, esp);
+      risco(dir - esp / 2, y - vao - comp, esp, comp);
+      risco(dir + vao, bai - esp / 2, comp, esp);
+      risco(dir - esp / 2, bai + vao, esp, comp);
+      risco(x - vao - comp, bai - esp / 2, comp, esp);
+      risco(x - esp / 2, bai + vao, esp, comp);
+    }
+
+    if (cfg.marcasRegistro) {
+      var af = 6, raio = 3;
+      var alvos = [
+        [x + largura / 2, y - af],
+        [x + largura / 2, y + altura + af],
+        [x - af, y + altura / 2],
+        [x + largura + af, y + altura / 2],
+      ];
+      for (var a = 0; a < alvos.length; a++) {
+        var el = document.createElement('div');
+        el.className = 'alvo';
+        el.style.left = mm(alvos[a][0]);
+        el.style.top = mm(alvos[a][1]);
+        el.style.width = mm(raio);
+        el.style.height = mm(raio);
+        folha.appendChild(el);
+      }
+    }
+  }
+}
+`;
 
 /** Espera as imagens carregarem: imprimir antes disso sai em branco. */
 const ESPERAR_IMAGENS = `
@@ -208,6 +363,12 @@ async function enviar({ id, opcoes, nome }) {
     });
     await janela.loadFile(html);
     await janela.webContents.executeJavaScript(ESPERAR_IMAGENS);
+
+    // Agora sim: com as imagens carregadas, o tamanho real de cada página é
+    // conhecido e a arte pode ser posicionada em milímetro.
+    await janela.webContents.executeJavaScript(
+      'window.__posicionar ? (window.__posicionar(), true) : false',
+    );
 
     const resultado = await new Promise((resolve) => {
       janela.webContents.print(

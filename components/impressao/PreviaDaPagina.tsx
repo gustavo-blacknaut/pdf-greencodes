@@ -10,6 +10,19 @@ import { cx } from '@/lib/utils';
  * Não desenha nada sozinha: recebe o canvas já preenchido pelo pai, que é quem
  * fala com o pdf.js. Aqui ficam só a moldura, o zoom e a navegação.
  */
+/** A folha desenhada na tela, já com a arte posicionada em cima dela. */
+export type FolhaNaTela = {
+  /** Medidas da folha, em pixels de tela. */
+  largura: number;
+  altura: number;
+  /** Onde a arte cai dentro dela, em pixels de tela. */
+  arte: { x: number; y: number; largura: number; altura: number };
+  /** Riscos de corte e alvos de registro, já em pixels. */
+  marcas: { x: number; y: number; largura: number; altura: number }[];
+  espelho?: string;
+  negativo?: boolean;
+};
+
 export function PreviaDaPagina({
   nome,
   paginas,
@@ -19,6 +32,8 @@ export function PreviaDaPagina({
   renderizando,
   telaRef,
   molduraRef,
+  folha,
+  aviso,
   onZoom,
   onPagina,
 }: {
@@ -30,6 +45,10 @@ export function PreviaDaPagina({
   renderizando: boolean;
   telaRef: RefObject<HTMLCanvasElement | null>;
   molduraRef: RefObject<HTMLDivElement | null>;
+  /** Ausente enquanto não se sabe a medida da página: aí mostra só o desenho. */
+  folha?: FolhaNaTela | null;
+  /** O que dizer quando a arte passa da folha. */
+  aviso?: string | null;
   onZoom: (valor: number) => void;
   onPagina: (valor: number) => void;
 }) {
@@ -74,7 +93,51 @@ export function PreviaDaPagina({
           nao da para rolar ate ela.
         */}
           <div className="relative mx-auto flex min-w-fit justify-center">
-            <canvas ref={telaRef} className="block rounded-lg bg-white shadow-lg" />
+            {/*
+              A folha, e a arte em cima dela.
+
+              Antes a prévia mostrava só a página, do tamanho que ela é. Quem
+              olhava não tinha como saber onde ela ia cair no papel, nem
+              quanto ia sobrar de branco — e é justamente isso que se quer
+              conferir antes de mandar uma tiragem.
+
+              A moldura branca é a folha; o `arte` posiciona o canvas dentro
+              dela com a mesma conta que o HTML da impressão usa.
+            */}
+            {folha ? (
+              <div
+                className="relative rounded-lg bg-white shadow-lg"
+                style={{ width: `${folha.largura}px`, height: `${folha.altura}px` }}
+              >
+                <canvas
+                  ref={telaRef}
+                  className="absolute block"
+                  style={{
+                    left: `${folha.arte.x}px`,
+                    top: `${folha.arte.y}px`,
+                    width: `${folha.arte.largura}px`,
+                    height: `${folha.arte.altura}px`,
+                    transform: folha.espelho,
+                    filter: folha.negativo ? 'invert(1)' : undefined,
+                  }}
+                />
+                {/* O que passa da folha não sai impresso, e a prévia diz isso. */}
+                {folha.marcas.map((marca, i) => (
+                  <span
+                    key={i}
+                    className="absolute bg-ink/70"
+                    style={{
+                      left: `${marca.x}px`,
+                      top: `${marca.y}px`,
+                      width: `${marca.largura}px`,
+                      height: `${marca.altura}px`,
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <canvas ref={telaRef} className="block rounded-lg bg-white shadow-lg" />
+            )}
             {renderizando && (
               <span className="absolute inset-0 grid place-items-center rounded-lg bg-bg/50">
                 <Loader2 className="h-5 w-5 animate-spin text-brand" />
@@ -82,6 +145,11 @@ export function PreviaDaPagina({
             )}
           </div>
         </div>
+        {aviso && (
+          <p className="border-t bg-amber-500/10 px-4 py-2 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+            {aviso}
+          </p>
+        )}
         {paginas > 1 && (
           <div className="flex items-center justify-center gap-3 border-t px-4 py-2.5">
             <button

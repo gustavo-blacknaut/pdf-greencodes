@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
@@ -21,7 +21,8 @@ import {
 import { Dropzone } from './Dropzone';
 import { FilaDeArquivos } from './impressao/FilaDeArquivos';
 import { OpcoesDeImpressao } from './impressao/OpcoesDeImpressao';
-import { PreviaDaPagina } from './impressao/PreviaDaPagina';
+import { PreviaDaPagina, type FolhaNaTela } from './impressao/PreviaDaPagina';
+import { folhaEmMm, marcasDeCorte, marcasDeRegistro, passaDaFolha, posicionar, sobra } from '@/lib/impressao/layout';
 import { atividade } from '@/lib/atividade';
 import { vault } from '@/lib/ephemeral';
 import { IMAGE_ACCEPT } from '@/lib/ferramentas/tipos';
@@ -114,6 +115,9 @@ export function PrintWorkspace() {
   // Escala que a última renderização usou. O zoom parte dela: sem isso, o
   // primeiro clique em "+" saltava de "ajustado a 188%" para 125%, encolhendo.
   const [escalaAtual, setEscalaAtual] = useState(1);
+  // A medida da pagina atual em milimetros, que so se sabe depois de abrir.
+  const [arteMm, setArteMm] = useState<{ largura: number; altura: number } | null>(null);
+
 
   // 1 = uma página por folha, sem montagem. Acima disso o documento é
   // remontado antes da prévia, para o que aparece ser o que sai impresso.
@@ -137,6 +141,99 @@ export function PrintWorkspace() {
   const [noApp, setNoApp] = useState(false);
   const [impressoras, setImpressoras] = useState<Impressora[] | null>(null);
   const [opcoes, setOpcoes] = useState<OpcoesImpressao>(PADRAO);
+
+  /**
+   * A folha e a arte em cima dela, em pixels de tela.
+   *
+   * Antes a prévia mostrava só a página, do tamanho que ela é — quem olhava
+   * não tinha como saber onde ela ia cair no papel nem quanto ia sobrar de
+   * branco, que é justamente o que se quer conferir antes de uma tiragem.
+   *
+   * A conta é a mesma que o HTML da impressão usa, em `lib/impressao/layout`.
+   * Aqui ela só é convertida de milímetro para pixel.
+   */
+  const folhaNaTela = useMemo<FolhaNaTela | null>(() => {
+    if (!arteMm || !larguraDisponivel) return null;
+
+    const folha = folhaEmMm(String(opcoes.papel ?? 'A4'), Boolean(opcoes.paisagem));
+    const ajuste = {
+      escala: (opcoes.escala ?? opcoes.ajuste ?? 'pagina') as NonNullable<typeof opcoes.escala>,
+      porcento: opcoes.escalaPorcento,
+      deslocaX: opcoes.deslocaXmm,
+      deslocaY: opcoes.deslocaYmm,
+      margemLados: opcoes.margemLadosMm,
+      margemCima: opcoes.margemCimaMm,
+    };
+    const caixa = posicionar(folha, arteMm, ajuste);
+
+    // A folha inteira cabe na largura disponível; o zoom multiplica dali.
+    const porMm = (larguraDisponivel / folha.largura) * (zoom > 0 ? zoom : 1);
+    const emPx = (valor: number) => valor * porMm;
+
+    const marcas: FolhaNaTela['marcas'] = [];
+    if (opcoes.marcasCorte) {
+      const espessura = Math.max(1, emPx(0.25));
+      for (const traco of marcasDeCorte(caixa)) {
+        marcas.push({
+          x: emPx(Math.min(traco.x1, traco.x2)),
+          y: emPx(Math.min(traco.y1, traco.y2)),
+          largura: Math.max(espessura, emPx(Math.abs(traco.x2 - traco.x1))),
+          altura: Math.max(espessura, emPx(Math.abs(traco.y2 - traco.y1))),
+        });
+      }
+    }
+    if (opcoes.marcasRegistro) {
+      const lado = Math.max(3, emPx(3));
+      for (const alvo of marcasDeRegistro(caixa)) {
+        marcas.push({ x: emPx(alvo.x) - lado / 2, y: emPx(alvo.y) - lado / 2, largura: lado, altura: lado });
+      }
+    }
+
+    return {
+      largura: emPx(folha.largura),
+      altura: emPx(folha.altura),
+      arte: { x: emPx(caixa.x), y: emPx(caixa.y), largura: emPx(caixa.largura), altura: emPx(caixa.altura) },
+      marcas,
+      espelho:
+        opcoes.espelho === 'horizontal'
+          ? 'scaleX(-1)'
+          : opcoes.espelho === 'vertical'
+            ? 'scaleY(-1)'
+            : undefined,
+      negativo: Boolean(opcoes.negativo),
+    };
+  }, [arteMm, larguraDisponivel, zoom, opcoes]);
+
+  /*
+   * O desenho da folha, visto de dentro do efeito que renderiza.
+   *
+   * O efeito não pode depender de `folhaNaTela`: ela muda a cada ajuste, e o
+   * documento seria redesenhado a cada clique numa seta de milímetro. A ref
+   * dá o valor de agora sem entrar na lista de dependências.
+   */
+  const desenhaFolhaRef = useRef(false);
+  useEffect(() => {
+    desenhaFolhaRef.current = Boolean(folhaNaTela);
+  }, [folhaNaTela]);
+
+  /** O aviso de que parte da arte não vai sair impressa. */
+  const avisoDeSobra = useMemo(() => {
+    if (!arteMm) return null;
+    const folha = folhaEmMm(String(opcoes.papel ?? 'A4'), Boolean(opcoes.paisagem));
+    const caixa = posicionar(folha, arteMm, {
+      escala: (opcoes.escala ?? opcoes.ajuste ?? 'pagina') as NonNullable<typeof opcoes.escala>,
+      porcento: opcoes.escalaPorcento,
+      deslocaX: opcoes.deslocaXmm,
+      deslocaY: opcoes.deslocaYmm,
+      margemLados: opcoes.margemLadosMm,
+      margemCima: opcoes.margemCimaMm,
+    });
+    if (!passaDaFolha(folha, caixa)) return null;
+
+    const fora = sobra(folha, caixa);
+    const maior = Math.max(fora.esquerda, fora.direita, fora.cima, fora.baixo);
+    return `A arte passa da folha em até ${maior.toFixed(1)} mm. O que fica de fora não sai impresso.`;
+  }, [arteMm, opcoes]);
   const [imprimindo, setImprimindo] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
@@ -330,6 +427,8 @@ export function PrintWorkspace() {
       try {
         const p = await doc.getPage(Math.min(pagina, doc.numPages));
         const natural = p.getViewport({ scale: 1 });
+        // Escala 1 do pdf.js e ponto tipografico: 72 por polegada.
+        setArteMm({ largura: (natural.width / 72) * 25.4, altura: (natural.height / 72) * 25.4 });
 
         // Quanto a página ocupa na tela, em pixels de CSS.
         const ajuste = larguraDisponivel / natural.width;
@@ -349,10 +448,22 @@ export function PrintWorkspace() {
 
         tela.width = Math.floor(viewport.width);
         tela.height = Math.floor(viewport.height);
-        // O canvas é grande por dentro e do tamanho certo por fora: é isso
-        // que dá texto nítido em vez de ampliado.
-        tela.style.width = `${Math.round(natural.width * escalaCss)}px`;
-        tela.style.height = `${Math.round(natural.height * escalaCss)}px`;
+        /*
+         * O canvas é grande por dentro e do tamanho certo por fora: é isso
+         * que dá texto nítido em vez de ampliado.
+         *
+         * Quando a prévia desenha a folha, quem manda no tamanho de fora é o
+         * layout — o canvas é esticado para dentro da caixa da arte, na
+         * posição e na escala que vão para o papel. Mexer aqui também faria
+         * os dois brigarem, e a arte piscaria de tamanho a cada desenho.
+         */
+        if (!desenhaFolhaRef.current) {
+          tela.style.width = `${Math.round(natural.width * escalaCss)}px`;
+          tela.style.height = `${Math.round(natural.height * escalaCss)}px`;
+        } else {
+          tela.style.removeProperty('width');
+          tela.style.removeProperty('height');
+        }
 
         const contexto = tela.getContext('2d');
         if (contexto) {
@@ -634,6 +745,8 @@ export function PrintWorkspace() {
                   zoom={zoom}
                   escalaAtual={escalaAtual}
                   renderizando={renderizando}
+                  folha={folhaNaTela}
+                  aviso={avisoDeSobra}
                   telaRef={telaRef}
                   molduraRef={molduraRef}
                   onZoom={setZoom}

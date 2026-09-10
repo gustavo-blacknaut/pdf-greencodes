@@ -132,6 +132,9 @@ async function gerar(janela, html, opcoes) {
   await janela.webContents.executeJavaScript(
     'Promise.all([...document.images].map((i) => i.complete ? 0 : new Promise((p) => { i.onload = p; i.onerror = p; })))',
   );
+  // O mesmo que o enviar() faz: posicionar so depois de as imagens
+  // carregarem, senao o tamanho real de cada pagina e zero.
+  await janela.webContents.executeJavaScript('window.__posicionar ? (window.__posicionar(), true) : false');
   return janela.webContents.printToPDF(opcoes);
 }
 
@@ -146,9 +149,18 @@ async function principal() {
   const casos = [
     { nome: 'A4 em pé', paisagem: false, esperado: A4, arte: [420, 594] },
     { nome: 'A4 deitada', paisagem: true, esperado: { largura: A4.altura, altura: A4.largura }, arte: [594, 420] },
+    // Metade do tamanho, no centro: a tinta tem que cobrir um quarto da área.
+    { nome: 'A4 a 100%', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'original', dpi: 72 }, cobertura: [0.97, 1.01] },
+    { nome: 'A4 a 50%', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'porcento', escalaPorcento: 50, dpi: 72 }, cobertura: [0.24, 0.26] },
+    // Marcas de corte: a arte encolhe e aparecem oito riscos em volta.
+    // 60% da folha da 36% de area; as oito marcas somam quase nada.
+    { nome: 'com marcas', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'porcento', escalaPorcento: 60, dpi: 72, marcasCorte: true }, cobertura: [0.35, 0.38] },
+    // Deslocada 20 mm para a direita: parte sai da folha e a tinta cai.
+    { nome: 'deslocada', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'original', dpi: 72, deslocaXmm: 20 }, cobertura: [0.88, 0.92] },
   ];
 
   const janela = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  const casos_medidos = [];
   let falhou = false;
 
   for (const caso of casos) {
@@ -158,7 +170,7 @@ async function principal() {
     const html = path.join(pasta, `folha-${caso.paisagem ? 'deitada' : 'em-pe'}.html`);
     writeFileSync(
       html,
-      montarHtml([pagina], 'A4', { paisagem: caso.paisagem, margemLadosMm: 0, margemCimaMm: 0, ajuste: 'pagina' }),
+      montarHtml([pagina], 'A4', { paisagem: caso.paisagem, margemLadosMm: 0, margemCimaMm: 0, ajuste: 'pagina', ...(caso.extras ?? {}) }),
       'utf8',
     );
 
@@ -169,7 +181,9 @@ async function principal() {
       printBackground: true,
     });
 
-    writeFileSync(path.join(pasta, caso.paisagem ? 'deitada.pdf' : 'em-pe.pdf'), pdf);
+    const apelido = caso.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    writeFileSync(path.join(pasta, apelido + '.pdf'), pdf);
+    casos_medidos.push({ arquivo: apelido + '.pdf', nome: caso.nome, cobertura: caso.cobertura ?? [0.97, 1.01] });
     const medida = medirFolha(pdf);
     const alvo = caso.esperado;
     const bate =
@@ -206,6 +220,9 @@ async function principal() {
    * Python do motor. Chamar daqui, em vez de encadear no `npm run`, evita o
    * caminho com barra invertida — que o cmd do Windows come.
    */
+  // A lista do que medir, para o Python saber o que esperar de cada folha.
+  writeFileSync(path.join(pasta, 'casos.json'), JSON.stringify(casos_medidos, null, 1));
+
   console.log('\n  Medindo onde a tinta caiu...\n');
   const python = path.join(process.cwd(), 'motor', 'runtime', 'python.exe');
   const medicao = spawnSync(python, [path.join('scripts', 'provar-impressao.py')], { encoding: 'utf8' });

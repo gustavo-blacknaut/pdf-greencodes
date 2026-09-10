@@ -9,14 +9,15 @@ em retrato enquanto o driver recebia uma folha deitada.
 
 Medir so o tamanho da pagina, como a primeira versao do script fazia, teria
 aprovado o defeito sem piscar. O que denuncia e a area coberta: a pagina de
-teste e um retangulo preto que deve cobrir a folha inteira. Cobrindo metade,
-com branco em volta, e o defeito de volta.
+teste e um retangulo preto, e sabendo a escala pedida da para dizer quanto
+dela deve estar coberto.
 
-    motor/runtime/python.exe scripts/provar-impressao.py
+    npm run provar-impressao
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -24,74 +25,55 @@ import pymupdf
 
 PASTA = os.path.join("dist-app", ".prova-impressao")
 
-# A arte cobre a folha toda; abaixo disso houve encolhimento.
-COBERTURA_MINIMA = 0.97
 
-
-def medir(caminho: str) -> tuple[float, tuple[float, float, float, float]]:
-    """Devolve a fracao coberta por tinta e a margem branca de cada lado."""
+def medir(caminho: str) -> float:
+    """A fracao da folha coberta por tinta."""
     doc = pymupdf.open(caminho)
     try:
-        pagina = doc[0]
-        mapa = pagina.get_pixmap(dpi=72, colorspace=pymupdf.csGRAY)
-
+        mapa = doc[0].get_pixmap(dpi=72, colorspace=pymupdf.csGRAY)
         escuros = 0
-        esquerda, direita = mapa.width, 0
-        cima, baixo = mapa.height, 0
-
         for y in range(mapa.height):
             inicio = y * mapa.stride
             linha = mapa.samples[inicio : inicio + mapa.width]
-            for x, valor in enumerate(linha):
-                if valor >= 128:
-                    continue
-                escuros += 1
-                esquerda = min(esquerda, x)
-                direita = max(direita, x)
-                cima = min(cima, y)
-                baixo = max(baixo, y)
-
-        total = mapa.width * mapa.height
-        if not escuros:
-            return 0.0, (0, 0, 0, 0)
-
-        margens = (
-            esquerda / mapa.width,
-            (mapa.width - 1 - direita) / mapa.width,
-            cima / mapa.height,
-            (mapa.height - 1 - baixo) / mapa.height,
-        )
-        return escuros / total, margens
+            escuros += sum(1 for valor in linha if valor < 128)
+        return escuros / (mapa.width * mapa.height)
     finally:
         doc.close()
 
 
 def principal() -> int:
-    if not os.path.isdir(PASTA):
-        print(f"nao achei {PASTA}. Rode antes: npx electron scripts/provar-impressao.mjs")
+    lista = os.path.join(PASTA, "casos.json")
+    if not os.path.exists(lista):
+        print(f"nao achei {lista}. Rode antes: npm run provar-impressao")
         return 2
 
+    with open(lista, encoding="utf-8") as arquivo:
+        casos = json.load(arquivo)
+
     falhou = False
-    for nome, rotulo in [("em-pe.pdf", "A4 em pe"), ("deitada.pdf", "A4 deitada")]:
-        caminho = os.path.join(PASTA, nome)
+    for caso in casos:
+        caminho = os.path.join(PASTA, caso["arquivo"])
         if not os.path.exists(caminho):
-            print(f"  {rotulo:<12} FALTOU o arquivo {nome}")
+            print(f"  {caso['nome']:<14} FALTOU o arquivo")
             falhou = True
             continue
 
-        cobertura, margens = medir(caminho)
-        ok = cobertura >= COBERTURA_MINIMA
-        print(f"  {rotulo:<12} tinta cobre {cobertura * 100:5.1f}% da folha   {'OK' if ok else 'ERRADO'}")
+        cobertura = medir(caminho)
+        minimo, maximo = caso["cobertura"]
+        ok = minimo <= cobertura <= maximo
+
+        print(
+            f"  {caso['nome']:<14} tinta cobre {cobertura * 100:5.1f}% "
+            f"(esperado entre {minimo * 100:.0f}% e {maximo * 100:.0f}%)   {'OK' if ok else 'ERRADO'}"
+        )
 
         if not ok:
             falhou = True
-            maior = max(margens)
-            print(f"     sobrou branco: ate {maior * 100:.1f}% de um lado")
-            # 0,707 de lado da 0,5 de area, e a margem branca fica em ~14,6%.
-            if 0.45 <= cobertura <= 0.55:
-                print("     ^ metade da area e a assinatura do defeito antigo (encolhimento de 0,707).")
+            # Metade da area e a assinatura do defeito da folha deitada.
+            if 0.45 <= cobertura <= 0.55 and minimo > 0.9:
+                print("     ^ metade da area: o encolhimento de 0,707 voltou.")
 
-    print("\nREPROVOU" if falhou else "\nA arte cobre a folha inteira nas duas orientacoes.")
+    print("\nREPROVOU" if falhou else "\nA arte cai onde deveria, nas quatro montagens.")
     return 1 if falhou else 0
 
 
