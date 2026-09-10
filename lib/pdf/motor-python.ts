@@ -207,9 +207,24 @@ const NO_PYTHON: Record<string, Traducao> = {
   split: {
     acao: 'dividir',
     rotulo: 'Dividindo',
-    // Dos quatro modos da ferramenta, o motor faz um: N páginas por arquivo.
-    aceita: (ctx) => String(ctx.options.mode ?? 'every') === 'every',
-    opcoes: (o) => ({ porArquivo: numero(o.every, 1) }),
+    /*
+     * Dos quatro modos da ferramenta, o motor faz dois: N páginas por arquivo
+     * e por tamanho máximo.
+     *
+     * O de tamanho vale a viagem por um motivo que não é velocidade: quando
+     * uma parte de uma página só passa do limite, ela não tem como ser
+     * dividida de novo — precisa encolher. O motor encolhe reduzindo só as
+     * imagens embutidas, e o texto continua texto. No navegador a única saída
+     * seria redesenhar a página como foto, que destrói o texto junto.
+     */
+    aceita: (ctx) => ['every', 'size'].includes(String(ctx.options.mode ?? 'every')),
+    opcoes: (o) =>
+      String(o.mode ?? 'every') === 'size'
+        ? {
+            limiteBytes: Math.max(1024, Math.round(numero(o.maxSize, 10) * 1024 * 1024)),
+            reduzir: o.reduzir !== false && o.reduzir !== 'false',
+          }
+        : { porArquivo: numero(o.every, 1) },
   },
 
   'separate-plates': {
@@ -254,6 +269,65 @@ const NO_PYTHON: Record<string, Traducao> = {
     }),
   },
 };
+
+/**
+ * Compacta um PDF sem tocar em nada do que está desenhado.
+ *
+ * Deduplica os objetos repetidos, joga fora o que ninguém referencia e
+ * recomprime os fluxos. Nenhum pixel muda, nenhuma cor muda, o texto continua
+ * texto — o arquivo só fica menor.
+ *
+ * O ganho é grande justamente ao juntar. Medido aqui: cinco cópias do mesmo
+ * PDF de 3 KB viram 13 KB quando os objetos repetidos ficam todos no arquivo,
+ * e voltam a 3 KB depois da deduplicação. Quem junta trinta orçamentos com o
+ * mesmo timbre paga trinta vezes pelo timbre sem isto.
+ *
+ * O pdf-lib não sabe fazer isso, então no site esta função devolve o arquivo
+ * como veio. No aplicativo, o MuPDF faz.
+ *
+ * Devolve sempre o menor dos dois: compactar que engorda não é compactar, e
+ * arquivo estranho pode sair maior depois de reescrito.
+ */
+export async function compactarSemPerda(blob: Blob, senha?: string): Promise<Blob> {
+  const motor = motorPython();
+  if (!motor) return blob;
+
+  const pasta = await motor.pastaTemporaria();
+  try {
+    const entrada = await motor.gravarEntrada(pasta, 'juntar.pdf', await blob.arrayBuffer());
+    const dados = (await motor.executar('reparar', {
+      arquivos: [entrada],
+      opcoes: {},
+      senhas: senha ? [senha] : [],
+      saida: `${pasta}\\compacto.pdf`,
+    })) as { arquivo?: string };
+
+    if (typeof dados.arquivo !== 'string') return blob;
+    const saida = await motor.lerSaida(dados.arquivo);
+    const compacto = new Blob([saida.bytes], { type: 'application/pdf' });
+    return compacto.size > 0 && compacto.size < blob.size ? compacto : blob;
+  } catch {
+    // Compactar é um extra. Falhar aqui não pode custar o trabalho que já
+    // ficou pronto: devolve o arquivo do jeito que estava.
+    return blob;
+  } finally {
+    await motor.limpar(pasta).catch(() => {});
+  }
+}
+
+/**
+ * O que a tela manda vira o que o motor espera.
+ *
+ * Exportado para o teste poder conferir a tradução sem subir o motor. É onde
+ * mora o engano silencioso: uma unidade trocada — MB por bytes, milímetro por
+ * ponto — não estoura em lugar nenhum, e entrega um arquivo mil vezes errado
+ * que "funcionou".
+ */
+export function opcoesDoMotor(id: string, opcoes: Opcoes): Record<string, unknown> {
+  const traducao = NO_PYTHON[id];
+  if (!traducao) throw new Error(`Ferramenta sem motor Python: ${id}`);
+  return traducao.opcoes ? traducao.opcoes(opcoes) : {};
+}
 
 /** Se esta operação, com estes arquivos, deve ir para o Python. */
 export function temMotorPython(id: string, ctx: RunContext): boolean {

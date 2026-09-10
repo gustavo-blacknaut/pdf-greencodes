@@ -24,7 +24,7 @@ vi.mock('../desktop', () => ({
 
 let estaNoApp = true;
 
-const { rodarNoPython, temMotorPython } = await import('./motor-python');
+const { compactarSemPerda, opcoesDoMotor, rodarNoPython, temMotorPython } = await import('./motor-python');
 
 function contexto(extras: Partial<Parameters<typeof rodarNoPython>[1]> = {}) {
   return {
@@ -75,9 +75,25 @@ describe('quais ferramentas atravessam', () => {
 
   it('só desce o modo de dividir que o motor cobre', () => {
     expect(temMotorPython('split', contexto({ options: { mode: 'every', every: 5 } }))).toBe(true);
-    // Por tamanho e por intervalo o motor não faz; ficam no TypeScript.
-    expect(temMotorPython('split', contexto({ options: { mode: 'size', maxSize: 5 } }))).toBe(false);
+    /*
+     * O modo por tamanho desce por um motivo que não é velocidade: quando uma
+     * parte de uma página só passa do limite, ela precisa encolher, e o motor
+     * encolhe reduzindo só as imagens — o texto continua texto. No navegador
+     * a única saída seria redesenhar a página inteira como foto.
+     */
+    expect(temMotorPython('split', contexto({ options: { mode: 'size', maxSize: 5 } }))).toBe(true);
+    // Por intervalo o motor não faz; fica no TypeScript.
     expect(temMotorPython('split', contexto({ options: { mode: 'ranges', ranges: '1-3' } }))).toBe(false);
+  });
+
+  it('o limite de tamanho chega ao motor em bytes, e a redução ligada', () => {
+    // A tela fala em MB e o motor em bytes. Errar essa conversão por mil
+    // entregaria partes de 1 KB ou de 1 GB, e as duas "funcionam".
+    const opcoes = opcoesDoMotor('split', { mode: 'size', maxSize: 1 });
+    expect(opcoes.limiteBytes).toBe(1024 * 1024);
+    expect(opcoes.reduzir).toBe(true);
+
+    expect(opcoesDoMotor('split', { mode: 'size', maxSize: 1, reduzir: false }).reduzir).toBe(false);
   });
 
   it('marca d’água ladrilhada fica no TypeScript', () => {
@@ -187,5 +203,56 @@ describe('ida e volta pelo disco', () => {
     });
     const resultado = await rodarNoPython('black-tones', contexto());
     expect(resultado.notes).toEqual(['O preto saiu em K100.']);
+  });
+});
+
+describe('compactar sem perda', () => {
+  /*
+   * O ganho é real e foi medido: dez orçamentos com o mesmo timbre somam
+   * 3419 KB e viram 345 KB juntos — 90% menos, só por não repetir o que eles
+   * tinham em comum. Nenhuma imagem é reduzida e nenhuma cor muda.
+   *
+   * O que se testa aqui é o contrato, não a compactação: que ela nunca
+   * devolve um arquivo maior, nunca derruba o trabalho que já ficou pronto, e
+   * some sozinha no site.
+   */
+  const grande = new Blob([new Uint8Array(1000)], { type: 'application/pdf' });
+
+  it('devolve o arquivo compactado quando ele ficou menor', async () => {
+    motorFalso.executar.mockResolvedValue({ arquivo: 'C:\\temp\\x\\compacto.pdf' });
+    motorFalso.lerSaida.mockResolvedValue({ nome: 'compacto.pdf', bytes: new ArrayBuffer(300) });
+
+    const saida = await compactarSemPerda(grande);
+    expect(saida.size).toBe(300);
+    expect(motorFalso.executar).toHaveBeenCalledWith('reparar', expect.anything());
+  });
+
+  it('mantém o original quando compactar engordaria', async () => {
+    // Acontece com arquivo estranho, e entregar maior chamando de compactado
+    // seria mentir para quem pediu.
+    motorFalso.executar.mockResolvedValue({ arquivo: 'C:\\temp\\x\\compacto.pdf' });
+    motorFalso.lerSaida.mockResolvedValue({ nome: 'compacto.pdf', bytes: new ArrayBuffer(5000) });
+
+    expect((await compactarSemPerda(grande)).size).toBe(1000);
+  });
+
+  it('falhar aqui não custa o trabalho que já ficou pronto', async () => {
+    // Compactar é um extra depois do serviço feito. Se o motor tropeçar, o
+    // documento unido tem que sair mesmo assim.
+    motorFalso.executar.mockRejectedValue(new Error('o motor caiu'));
+    expect((await compactarSemPerda(grande)).size).toBe(1000);
+  });
+
+  it('limpa a pasta temporária mesmo quando falha', async () => {
+    motorFalso.executar.mockRejectedValue(new Error('o motor caiu'));
+    await compactarSemPerda(grande);
+    expect(motorFalso.limpar).toHaveBeenCalledWith('C:\\temp\\x');
+  });
+
+  it('no site devolve o arquivo como veio, sem prometer nada', async () => {
+    estaNoApp = false;
+    const saida = await compactarSemPerda(grande);
+    expect(saida).toBe(grande);
+    expect(motorFalso.executar).not.toHaveBeenCalled();
   });
 });

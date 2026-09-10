@@ -8,11 +8,12 @@ grande porque nao ha nada para rasterizar.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pymupdf
 
 from ..documento import abrir, faixa_de_paginas, nome_com_sufixo, salvar
+from ..encolher import ate_caber
 from ..protocolo import ErroDoUsuario, Pedido
 
 # Quantas paginas copiar antes de avisar o andamento. Avisar a cada pagina num
@@ -44,8 +45,24 @@ def juntar(pedido: Pedido) -> Dict[str, Any]:
 
         destino = pedido.saida or nome_com_sufixo(pedido.arquivos[0], "unido")
         bytes_saida = salvar(saida, destino, pedido.senha(0))
+
+        # `salvar` ja deduplica os objetos repetidos e recomprime os fluxos,
+        # sem tocar em nada do que esta desenhado. Juntar e onde isso mais
+        # rende: cada arquivo traz a sua copia do timbre, da fonte e do logo.
+        # A nota existe para o ganho aparecer na tela em vez de acontecer
+        # calado — quem pediu para juntar quer saber que nao perdeu nada.
+        notas = []
+        soma_das_entradas = sum(os.path.getsize(a) for a in pedido.arquivos if os.path.exists(a))
+        if soma_das_entradas and bytes_saida < soma_das_entradas:
+            economia = round((1 - bytes_saida / soma_das_entradas) * 100)
+            if economia >= 1:
+                notas.append(
+                    f"O arquivo foi compactado sem perder nada: {economia}% menor que a soma dos originais, "
+                    "so por nao repetir o que eles tinham em comum. Nenhuma imagem foi reduzida e nenhuma cor mudou."
+                )
+
         pedido.andamento(1.0)
-        return {"arquivo": destino, "paginas": paginas, "bytes": bytes_saida}
+        return {"arquivo": destino, "paginas": paginas, "bytes": bytes_saida, "notas": notas}
     finally:
         saida.close()
 
@@ -141,9 +158,13 @@ def girar(pedido: Pedido) -> Dict[str, Any]:
 
 
 def dividir(pedido: Pedido) -> Dict[str, Any]:
-    """Quebra em varios arquivos de N paginas cada."""
+    """Quebra em varios arquivos de N paginas cada, ou por tamanho maximo."""
     if not pedido.arquivos:
         raise ErroDoUsuario("nenhum arquivo escolhido")
+
+    limite_bytes = int(pedido.opcao("limiteBytes", 0) or 0)
+    if limite_bytes > 0:
+        return _dividir_por_tamanho(pedido, limite_bytes)
 
     por_arquivo = max(1, int(pedido.opcao("porArquivo", 1)))
     origem = pedido.arquivos[0]
@@ -172,6 +193,99 @@ def dividir(pedido: Pedido) -> Dict[str, Any]:
 
         pedido.andamento(1.0)
         return {"arquivos": pedacos, "paginas": total}
+    finally:
+        entrada.close()
+
+
+def _dividir_por_tamanho(pedido: Pedido, limite_bytes: int) -> Dict[str, Any]:
+    """Enche cada parte ate o limite, e encolhe a que passar mesmo assim.
+
+    Uma pagina sozinha que estoura o limite nao tem como ser dividida de novo:
+    a unica saida e encolher. Antes isso ficava por conta de quem pediu, que
+    recebia um arquivo de 3,9 MB depois de ter escrito "1 MB" na tela.
+
+    O encolhimento comeca pelo que nao custa nada — arrumar a estrutura — e so
+    mexe em imagem se ainda nao couber. Texto nunca vira foto por aqui.
+    """
+    origem = pedido.arquivos[0]
+    senha = pedido.senha(0)
+    reduzir = bool(pedido.opcao("reduzir", True))
+
+    entrada = abrir(origem, senha)
+    try:
+        total = entrada.page_count
+        pedacos: List[Dict[str, Any]] = []
+        encolhidos = 0
+        nao_couberam = 0
+
+        atual: List[int] = []
+
+        def gravar(indices: List[int]) -> None:
+            nonlocal encolhidos, nao_couberam
+            rotulo = f"{indices[0] + 1}" if len(indices) == 1 else f"{indices[0] + 1}-{indices[-1] + 1}"
+            destino = nome_com_sufixo(origem, f"paginas-{rotulo}")
+            if pedido.saida:
+                destino = os.path.join(pedido.saida, os.path.basename(destino))
+
+            saida = pymupdf.open()
+            saida.insert_pdf(entrada, from_page=indices[0], to_page=indices[-1])
+            bytes_saida = salvar(saida, destino, senha)
+            saida.close()
+
+            informacao: Dict[str, Any] = {
+                "arquivo": destino,
+                "paginas": len(indices),
+                "bytes": bytes_saida,
+            }
+
+            if bytes_saida > limite_bytes and reduzir:
+                resultado = ate_caber(destino, destino, limite_bytes, senha)
+                informacao["bytes"] = resultado.bytes
+                informacao["encolhido"] = resultado.conta
+                informacao["semPerda"] = resultado.sem_perda
+                encolhidos += 1
+                if not resultado.coube:
+                    nao_couberam += 1
+                    informacao["passou"] = True
+            elif bytes_saida > limite_bytes:
+                nao_couberam += 1
+                informacao["passou"] = True
+
+            pedacos.append(informacao)
+
+        # Vai somando pagina a pagina enquanto couber. Medir de verdade, e nao
+        # estimar: a mesma pagina pesa muito diferente conforme o que tem
+        # dentro, e compartilhar fonte com a vizinha muda a conta.
+        for indice in range(total):
+            pedido.andamento(indice / total, f"Pagina {indice + 1} de {total}")
+            teste = pymupdf.open()
+            teste.insert_pdf(entrada, from_page=(atual[0] if atual else indice), to_page=indice)
+            cabe = len(teste.tobytes(garbage=4, deflate=True)) <= limite_bytes
+            teste.close()
+
+            if cabe or not atual:
+                atual.append(indice)
+            else:
+                gravar(atual)
+                atual = [indice]
+
+        if atual:
+            gravar(atual)
+
+        notas = []
+        if encolhidos:
+            notas.append(
+                f"{encolhidos} parte(s) passavam do limite com uma pagina so e foram encolhidas. "
+                "O texto continua texto: so as imagens foram reduzidas."
+            )
+        if nao_couberam:
+            notas.append(
+                f"{nao_couberam} parte(s) nao couberam nem no menor tamanho possivel. "
+                "Uma pagina sozinha nao tem como ser dividida, entao o limite nao pode ser garantido."
+            )
+
+        pedido.andamento(1.0)
+        return {"arquivos": pedacos, "paginas": total, "notas": notas}
     finally:
         entrada.close()
 
