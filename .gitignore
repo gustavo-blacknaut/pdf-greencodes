@@ -13,3 +13,5 @@ motor/runtime/
 impressora/impressora.exe
 **/__pycache__/
 .pytest_cache/
+
+dist-app/.prova-impressao/
