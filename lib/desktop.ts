@@ -94,6 +94,29 @@ export type OpcoesImpressao = {
   margemCimaMm?: number;
   /** Como a página se encaixa na folha. */
   ajuste?: 'pagina' | 'preencher' | 'original';
+
+  /*
+   * A montagem de gráfica: escala, posição e marcas.
+   *
+   * Vieram depois, e por isso são opcionais — sem nenhuma delas a impressão
+   * segue o caminho antigo, que é mais simples e já está provado no papel.
+   */
+
+  /** O mesmo que `ajuste`, mais a porcentagem. Substitui `ajuste` quando vem. */
+  escala?: 'pagina' | 'preencher' | 'original' | 'porcento';
+  /** 100 é o tamanho de verdade. Vale só no modo porcentagem. */
+  escalaPorcento?: number;
+  /** Deslocamento a partir do centro da folha, em milímetros. */
+  deslocaXmm?: number;
+  deslocaYmm?: number;
+  /** Espelhar, para transfer e sublimação. */
+  espelho?: 'nao' | 'horizontal' | 'vertical';
+  /** Negativo, para fotolito. */
+  negativo?: boolean;
+  /** Os oito riscos que dizem onde cortar. Precisam de margem para caber. */
+  marcasCorte?: boolean;
+  /** Os alvos de alinhamento de chapa. Só servem em impressão de mais de uma cor. */
+  marcasRegistro?: boolean;
   /**
    * Abre o diálogo do Windows em vez de mandar direto.
    *

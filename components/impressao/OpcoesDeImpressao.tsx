@@ -210,13 +210,120 @@ export function OpcoesDeImpressao({
         <select
           id="ajuste"
           className={cx(campo, 'mt-1.5')}
-          value={opcoes.ajuste ?? 'pagina'}
-          onChange={(e) => onMudar('ajuste', e.target.value as OpcoesImpressao['ajuste'])}
+          value={opcoes.escala ?? opcoes.ajuste ?? 'pagina'}
+          onChange={(e) => {
+            const valor = e.target.value as NonNullable<OpcoesImpressao['escala']>;
+            onMudar('escala', valor);
+            // `ajuste` continua existindo para o caminho simples do CSS, que
+            // é o que roda quando não há escala nem posição em jogo.
+            if (valor !== 'porcento') onMudar('ajuste', valor as OpcoesImpressao['ajuste']);
+          }}
         >
           <option value="pagina">Ajustar à página — cabe inteira</option>
           <option value="preencher">Preencher a folha — corta o que sobra</option>
-          <option value="original">Tamanho original — sem redimensionar</option>
+          <option value="original">Tamanho original — 1 por 1</option>
+          <option value="porcento">Porcentagem — você diz quanto</option>
         </select>
+      </div>
+
+      {(opcoes.escala ?? 'pagina') === 'porcento' && (
+        <div>
+          <label htmlFor="escalaPorcento" className="field-label">
+            Escala
+          </label>
+          <div className="relative mt-1.5">
+            <input
+              id="escalaPorcento"
+              type="number"
+              min={1}
+              max={1000}
+              className={cx(campo, 'pr-10')}
+              value={opcoes.escalaPorcento ?? 100}
+              onChange={(e) =>
+                onMudar('escalaPorcento', Math.max(1, Math.min(1000, Number(e.target.value) || 100)))
+              }
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">%</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            Do tamanho de verdade da página. 100% imprime na medida em que o documento foi fechado.
+          </p>
+        </div>
+      )}
+
+      <div>
+        <p className="field-label">Posição na folha</p>
+        <div className="mt-1.5 grid grid-cols-2 gap-3">
+          {(
+            [
+              ['deslocaXmm', 'Horizontal', 'positivo vai para a direita'],
+              ['deslocaYmm', 'Vertical', 'positivo desce'],
+            ] as const
+          ).map(([chave, rotulo, dica]) => (
+            <div key={chave}>
+              <label htmlFor={chave} className="text-[11px] text-muted">
+                {rotulo}
+              </label>
+              <div className="relative mt-1">
+                <input
+                  id={chave}
+                  type="number"
+                  min={-200}
+                  max={200}
+                  className={cx(campo, 'pr-10')}
+                  value={opcoes[chave] ?? 0}
+                  onChange={(e) => onMudar(chave, Math.max(-200, Math.min(200, Number(e.target.value) || 0)))}
+                  title={dica}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">
+                  mm
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted">
+          A partir do centro da folha, que é onde a impressora põe o trabalho sozinha. Zero nos dois deixa centrado.
+        </p>
+      </div>
+
+      <div>
+        <label htmlFor="espelho" className="field-label">
+          Espelhar
+        </label>
+        <select
+          id="espelho"
+          className={cx(campo, 'mt-1.5')}
+          value={opcoes.espelho ?? 'nao'}
+          onChange={(e) => onMudar('espelho', e.target.value as OpcoesImpressao['espelho'])}
+        >
+          <option value="nao">Não espelhar</option>
+          <option value="horizontal">Na horizontal — transfer e sublimação</option>
+          <option value="vertical">Na vertical</option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        {(
+          [
+            ['marcasCorte', 'Marcas de corte', 'Oito riscos em volta da arte, dizendo onde cortar. Precisam de margem para caber na folha.'],
+            ['marcasRegistro', 'Marcas de registro', 'Os alvos que o impressor usa para alinhar as chapas. Só servem em impressão de mais de uma cor.'],
+            ['negativo', 'Negativo', 'Inverte o claro e o escuro. É o que o fotolito pede.'],
+          ] as const
+        ).map(([chave, rotulo, dica]) => (
+          <label key={chave} className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={Boolean(opcoes[chave])}
+              onChange={(e) => onMudar(chave, e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-brand"
+            />
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium">{rotulo}</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">{dica}</span>
+            </span>
+          </label>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

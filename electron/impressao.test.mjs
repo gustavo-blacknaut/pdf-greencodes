@@ -127,3 +127,62 @@ describe('HTML de impressão', () => {
     expect(html).not.toContain(String.fromCharCode(92));
   });
 });
+describe('escala, posição e marcas', () => {
+  /*
+   * O `object-fit` do CSS resolve o "cabe na folha" e mais nada: ele não sabe
+   * onde a arte ficou nem de que tamanho, e sem isso não há marca de corte
+   * alinhada com a borda. Por isso, quando escala, posição ou marca entram, a
+   * posição passa a ser calculada depois das imagens carregarem.
+   *
+   * Estes testes prendem *quando* o cálculo entra. O que ele calcula está em
+   * `lib/impressao/layout.test.ts`, com a mesma conta.
+   */
+  it('sem nada disso, mantém o caminho simples e provado', () => {
+    const html = montarHtml([folha(1)], 'A4', { ajuste: 'pagina' });
+    expect(html).not.toContain('__posicionar');
+    expect(html).toContain('object-fit: contain');
+  });
+
+  it('escala em porcentagem liga o cálculo', () => {
+    const html = montarHtml([folha(1)], 'A4', { escala: 'porcento', escalaPorcento: 50 });
+    expect(html).toContain('window.__posicionar');
+    expect(html).toContain('"porcento":50');
+  });
+
+  it('deslocar a arte liga o cálculo', () => {
+    expect(montarHtml([folha(1)], 'A4', { deslocaXmm: 5 })).toContain('window.__posicionar');
+    expect(montarHtml([folha(1)], 'A4', { deslocaYmm: -3 })).toContain('window.__posicionar');
+  });
+
+  it('as marcas ligam o cálculo, porque precisam saber onde a arte está', () => {
+    expect(montarHtml([folha(1)], 'A4', { marcasCorte: true })).toContain('window.__posicionar');
+    expect(montarHtml([folha(1)], 'A4', { marcasRegistro: true })).toContain('window.__posicionar');
+  });
+
+  it('o DPI vai junto: é dele que sai o tamanho de verdade', () => {
+    // Sem a resolução, "tamanho original" não quer dizer nada — a imagem é um
+    // raster, e px só vira mm sabendo em quantos pontos por polegada.
+    const html = montarHtml([folha(1)], 'A4', { escala: 'original', dpi: 600 });
+    expect(html).toContain('"dpi":600');
+  });
+
+  it('espelhar e negativo são CSS, e não precisam de cálculo', () => {
+    // Os dois valem para a imagem inteira, onde quer que ela esteja.
+    const espelhada = montarHtml([folha(1)], 'A4', { espelho: 'horizontal' });
+    expect(espelhada).toContain('transform: scaleX(-1)');
+    expect(espelhada).not.toContain('__posicionar');
+
+    expect(montarHtml([folha(1)], 'A4', { negativo: true })).toContain('filter: invert(1)');
+  });
+
+  it('define a função sem chamá-la', () => {
+    /*
+     * Chamar no carregamento do HTML mediria imagem com tamanho zero, e a
+     * conta sairia errada em silêncio — arte de tamanho nenhum no canto da
+     * folha. Quem chama é o processo principal, depois de esperar.
+     */
+    const html = montarHtml([folha(1)], 'A4', { marcasCorte: true });
+    expect(html).toContain('window.__posicionar = function');
+    expect(html).not.toMatch(/\n\s*posicionar\(\{/);
+  });
+});
