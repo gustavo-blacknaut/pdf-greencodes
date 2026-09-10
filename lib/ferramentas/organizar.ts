@@ -184,7 +184,15 @@ export const ORGANIZAR: Tool[] = [
         min: 1,
         max: 500,
         step: 1,
-        help: 'Dividirá o PDF em arquivos com até este tamanho limite (ex: 10 MB).',
+        help: 'Cada parte é enchida até chegar perto deste limite.',
+        showIf: { key: 'mode', equals: 'size' },
+      },
+      {
+        key: 'reduzir',
+        type: 'toggle',
+        label: 'Encolher a parte que passar do limite',
+        default: true,
+        help: 'Uma página sozinha não tem como ser dividida de novo: para caber, ela precisa encolher. No aplicativo só as imagens são reduzidas e o texto continua texto; no site a página é redesenhada. Desligue se preferir receber a parte maior, do jeito que está.',
         showIf: { key: 'mode', equals: 'size' },
       },
       {

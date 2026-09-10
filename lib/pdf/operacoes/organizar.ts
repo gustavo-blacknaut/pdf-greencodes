@@ -68,11 +68,32 @@ export async function merge(ctx: RunContext): Promise<RunResult> {
   }
 
   const name = String(ctx.options.filename || 'documento-unido').replace(/[\\/:*?"<>|]/g, '') || 'documento-unido';
-  const blob = await salvarPdf(out, senhaDaFila(ctx.files));
+  const senha = senhaDaFila(ctx.files);
+  const montado = await salvarPdf(out, senha);
+
+  /*
+   * Juntar é onde a repetição aparece: cada arquivo traz a sua cópia do
+   * timbre, da fonte, do logo. Compactar aqui deduplica tudo isso sem tocar
+   * em nada do que está desenhado — medido, cinco cópias de um PDF de 3 KB
+   * caem de 13 KB para 3 KB.
+   *
+   * No site esta chamada devolve o arquivo como veio: o pdf-lib não sabe
+   * deduplicar, e prometer o que não se faz seria pior que não fazer.
+   */
+  ctx.onProgress(0.97, 'Compactando sem perder qualidade');
+  const { compactarSemPerda } = await import('../motor-python');
+  const blob = await compactarSemPerda(montado, senha);
   ctx.onProgress(1);
 
   const notes: string[] = [];
   if (imagens > 0) notes.push(`${imagens} ${imagens === 1 ? 'imagem virou página' : 'imagens viraram páginas'}.`);
+  if (blob.size < montado.size) {
+    const economia = Math.round((1 - blob.size / montado.size) * 100);
+    notes.push(
+      `O arquivo foi compactado sem perder nada: ${economia}% menor só por não repetir o que os documentos ` +
+        'tinham em comum. Nenhuma imagem foi reduzida e nenhuma cor mudou.',
+    );
+  }
   if (ctx.files.some((f) => f.senha)) notes.push('O arquivo unido saiu sem senha.');
 
   return {
@@ -151,19 +172,63 @@ export async function split(ctx: RunContext): Promise<RunResult> {
     }
   }
 
+  /*
+   * No modo por tamanho, uma parte de uma página só pode passar do limite —
+   * e não há como dividi-la de novo. Antes o programa entregava assim mesmo:
+   * a pessoa escrevia "1 MB" na tela e recebia uma parte de 3,9 MB, sem uma
+   * palavra sobre isso.
+   *
+   * Agora a parte que passa é encolhida. No aplicativo isso nem chega aqui —
+   * o motor faz melhor, reduzindo só as imagens e mantendo o texto. Aqui, no
+   * navegador, o único caminho é redesenhar a página, e a nota avisa.
+   */
+  const limiteBytes =
+    mode === 'size' ? Math.max(1024, (Number(ctx.options.maxSize) || 10) * 1024 * 1024) : 0;
+  const reduzir = limiteBytes > 0 && ctx.options.reduzir !== false && ctx.options.reduzir !== 'false';
+
+  let encolhidas = 0;
+  let naoCouberam = 0;
+
   const outputs: OutputFile[] = [];
   for (let i = 0; i < groups.length; i += 1) {
     ctx.onProgress(i / groups.length, `Gerando parte ${i + 1}/${groups.length}`);
     const out = await PDFDocument.create();
     const pages = await out.copyPages(doc, groups[i].indices);
     pages.forEach((page) => out.addPage(page));
-    const blob = await salvarPdf(out, source.senha);
+    let blob = await salvarPdf(out, source.senha);
+
+    if (limiteBytes > 0 && blob.size > limiteBytes) {
+      if (reduzir) {
+        ctx.onProgress(i / groups.length, `Encolhendo a parte ${i + 1} para caber`);
+        const { ateCaber } = await import('../encolher');
+        const encolhido = await ateCaber(await blob.arrayBuffer(), limiteBytes, ctx, source.senha);
+        blob = encolhido.blob;
+        encolhidas += 1;
+        if (!encolhido.coube) naoCouberam += 1;
+      } else {
+        naoCouberam += 1;
+      }
+    }
+
     outputs.push({
       name: suffixName(source.name, `paginas-${groups[i].label}`),
       blob,
       pages: groups[i].indices.length,
     });
     await yieldToBrowser();
+  }
+
+  if (encolhidas) {
+    notes.push(
+      `${encolhidas} parte(s) passavam do limite com uma página só e foram encolhidas. ` +
+        'No navegador isso é feito redesenhando a página, então nelas o texto deixa de ser selecionável.',
+    );
+  }
+  if (naoCouberam) {
+    notes.push(
+      `${naoCouberam} parte(s) não couberam no limite. Uma página sozinha não tem como ser dividida, ` +
+        'então o limite não pode ser garantido.',
+    );
   }
 
   ctx.onProgress(1);

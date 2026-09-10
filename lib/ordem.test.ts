@@ -8,7 +8,7 @@
  * escolhida a dedo.
  */
 import { describe, expect, it } from 'vitest';
-import { ORDEM, TOOLS, TOOLS_DO_SITE } from './tools';
+import { ORDEM, TOOLS, TOOLS_DO_SITE, defaultOptions, getTool, isFieldVisible } from './tools';
 import { OPERATIONS } from './pdf/engine';
 
 /** O começo da grade é decisão de negócio: o que mais se usa no balcão. */
@@ -73,5 +73,25 @@ describe('o catálogo bate com o motor', () => {
     const soNoApp = TOOLS.filter((t) => t.soNoAplicativo);
     expect(TOOLS_DO_SITE).toHaveLength(TOOLS.length - soNoApp.length);
     expect(TOOLS_DO_SITE.some((t) => t.soNoAplicativo)).toBe(false);
+  });
+});
+
+describe('os campos que aparecem conforme o modo', () => {
+  it('o encolher só aparece no modo por tamanho, e vem ligado', () => {
+    /*
+     * O campo nasceu de um caso concreto: limite de 1 MB pedido, parte de
+     * 3,9 MB entregue. Ele vem ligado porque é o que a pessoa espera ao
+     * escrever um limite — mas continua desligável, porque encolher custa
+     * qualidade e há quem prefira o arquivo maior.
+     */
+    const dividir = getTool('dividir-pdf')!;
+    const campo = dividir.fields.find((f) => f.key === 'reduzir')!;
+    expect(campo, 'o campo de encolher sumiu do catálogo').toBeDefined();
+    expect(campo.default).toBe(true);
+
+    const opcoes = defaultOptions(dividir);
+    expect(isFieldVisible(campo, { ...opcoes, mode: 'size' })).toBe(true);
+    expect(isFieldVisible(campo, { ...opcoes, mode: 'every' })).toBe(false);
+    expect(isFieldVisible(campo, { ...opcoes, mode: 'ranges' })).toBe(false);
   });
 });
