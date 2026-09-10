@@ -255,9 +255,19 @@ export const PLAN_SUFFIX: Record<string, string> = {
 export async function applyPlan(ctx: RunContext): Promise<RunResult> {
   const { PDFDocument, degrees } = await loadPdfLib();
   const source = ctx.files[0];
-  const doc = await openWithPdfLib(source.bytes, source.senha);
-  const pageCount = doc.getPageCount();
   const board = String(ctx.options.board ?? 'organize');
+
+  /*
+   * Todos os arquivos da fila, e não só o primeiro.
+   *
+   * O organizar passou a receber vários PDFs de uma vez, com as páginas de
+   * todos na mesma grade: assim arrastar uma página já muda a ordem entre
+   * arquivos, sem precisar de uma segunda ideia de "ordem dos arquivos".
+   */
+  const docs = [];
+  for (const arquivo of ctx.files) docs.push(await openWithPdfLib(arquivo.bytes, arquivo.senha));
+  const totalDeCada = docs.map((d) => d.getPageCount());
+  const pageCount = totalDeCada.reduce((soma, n) => soma + n, 0);
 
   let plan: PagePlanItem[];
   try {
@@ -265,7 +275,20 @@ export async function applyPlan(ctx: RunContext): Promise<RunResult> {
   } catch {
     throw new Error('Não foi possível ler a seleção de páginas.');
   }
-  plan = plan.filter((item) => Number.isInteger(item.i) && item.i >= 0 && item.i < pageCount);
+
+  // Plano antigo não trazia `f`: sem arquivo, é o primeiro.
+  plan = plan.filter((item) => {
+    if (item.branco) return true;
+    const arquivo = item.f ?? 0;
+    return (
+      Number.isInteger(arquivo) &&
+      arquivo >= 0 &&
+      arquivo < docs.length &&
+      Number.isInteger(item.i) &&
+      item.i >= 0 &&
+      item.i < totalDeCada[arquivo]
+    );
+  });
 
   if (!plan.length) {
     throw new Error(
@@ -283,12 +306,55 @@ export async function applyPlan(ctx: RunContext): Promise<RunResult> {
 
   ctx.onProgress(0.4, 'Remontando o documento');
   const out = await PDFDocument.create();
-  const pages = await out.copyPages(
-    doc,
-    plan.map((item) => item.i),
-  );
-  pages.forEach((page, index) => {
-    const total = page.getRotation().angle + (plan[index].r ?? 0);
+
+  /*
+   * As páginas são copiadas por arquivo, e não uma a uma.
+   *
+   * `copyPages` de uma vez reaproveita fontes e imagens que as páginas
+   * dividem; chamado por página, cada chamada traz a sua cópia e o arquivo
+   * incha. A ordem final é remontada depois, pelo índice guardado aqui.
+   */
+  const copiadas = new Map<string, Awaited<ReturnType<typeof out.copyPages>>[number]>();
+  for (let arquivo = 0; arquivo < docs.length; arquivo += 1) {
+    const querDeste = plan
+      .map((item, ordem) => ({ item, ordem }))
+      .filter(({ item }) => !item.branco && (item.f ?? 0) === arquivo);
+    if (!querDeste.length) continue;
+
+    const paginas = await out.copyPages(
+      docs[arquivo],
+      querDeste.map(({ item }) => item.i),
+    );
+    querDeste.forEach(({ ordem }, k) => copiadas.set(String(ordem), paginas[k]));
+    await respirar(ctx);
+  }
+
+  // A medida da folha em branco acompanha a página anterior — ou a seguinte,
+  // quando ela abre o documento. Uma A4 fixa no meio de um documento ofício
+  // sairia com o tamanho trocado bem no meio.
+  const medidaVizinha = (ordem: number): [number, number] => {
+    for (const passo of [-1, 1]) {
+      for (let k = ordem + passo; k >= 0 && k < plan.length; k += passo) {
+        const vizinha = copiadas.get(String(k));
+        if (vizinha) {
+          const { width, height } = vizinha.getSize();
+          return [width, height];
+        }
+      }
+    }
+    return [mmParaPt(210), mmParaPt(297)];
+  };
+
+  let brancas = 0;
+  plan.forEach((item, ordem) => {
+    if (item.branco) {
+      out.addPage(medidaVizinha(ordem));
+      brancas += 1;
+      return;
+    }
+    const page = copiadas.get(String(ordem));
+    if (!page) return;
+    const total = page.getRotation().angle + (item.r ?? 0);
     page.setRotation(degrees(((total % 360) + 360) % 360));
     out.addPage(page);
   });
@@ -296,21 +362,31 @@ export async function applyPlan(ctx: RunContext): Promise<RunResult> {
   const blob = await salvarPdf(out, source.senha);
   ctx.onProgress(1);
 
-  const removed = pageCount - plan.length;
+  const doDocumento = plan.filter((item) => !item.branco).length;
+  const removed = pageCount - doDocumento;
   const rotated = plan.filter((item) => item.r).length;
   const notes: string[] = [];
   if (board === 'keep') {
-    notes.push(`${plan.length} de ${pageCount} páginas no arquivo novo.`);
+    notes.push(`${doDocumento} de ${pageCount} páginas no arquivo novo.`);
   } else if (removed > 0) {
     notes.push(`${removed} página${removed > 1 ? 's' : ''} removida${removed > 1 ? 's' : ''}.`);
   }
   if (rotated > 0) notes.push(`${rotated} página${rotated > 1 ? 's' : ''} girada${rotated > 1 ? 's' : ''}.`);
+  if (brancas > 0) {
+    notes.push(
+      `${brancas} folha${brancas > 1 ? 's' : ''} em branco inserida${brancas > 1 ? 's' : ''}, ` +
+        'na medida da página vizinha.',
+    );
+  }
+  if (docs.length > 1) {
+    notes.push(`${docs.length} arquivos entraram na mesma grade e saíram num documento só.`);
+  }
 
   return {
     files: [
       { name: suffixName(source.name, PLAN_SUFFIX[board] ?? 'editado'), blob, pages: plan.length },
     ],
-    inputBytes: source.size,
+    inputBytes: ctx.files.reduce((soma, arquivo) => soma + arquivo.size, 0),
     outputBytes: blob.size,
     notes,
   };

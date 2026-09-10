@@ -21,6 +21,7 @@
  */
 
 import { BORDA_EM_MODULOS, correcaoValida, matrizQr, type MatrizQr } from '../../codigos/qr';
+import { montarConteudo, TIPOS, type TipoDeConteudo } from '../../codigos/conteudo';
 import {
   barrasCompridas,
   faixasEscuras,
@@ -67,7 +68,15 @@ export function linhasDeConteudo(texto: unknown): string[] {
   return linhas;
 }
 
-/** Nome de arquivo a partir do conteúdo, sem o que o sistema recusa. */
+/**
+ * Nome de arquivo a partir do conteúdo, sem o que o sistema recusa.
+ *
+ * Só serve para o modo texto, onde o conteúdo é curto e reconhecível — é o
+ * que faz uma pasta com trinta códigos gerados de uma planilha ser
+ * navegável. Para os outros tipos o conteúdo é um formato interno: um PIX
+ * viraria `00020126470014br.gov.bcb.pix0125contato@.png`, que não ajuda
+ * ninguém a achar o arquivo depois.
+ */
 function nomeDoCodigo(conteudo: string, indice: number, extensao: string): string {
   const limpo = conteudo
     .replace(/[\\/:*?"<>|]+/g, '-')
@@ -75,6 +84,12 @@ function nomeDoCodigo(conteudo: string, indice: number, extensao: string): strin
     .slice(0, 40)
     .replace(/^-+|-+$/g, '');
   return `${limpo || `codigo-${indice + 1}`}.${extensao}`;
+}
+
+/** O nome que cada tipo merece: o conteúdo só quando ele diz alguma coisa. */
+function nomeDoQr(tipo: TipoDeConteudo, conteudo: string, indice: number, extensao: string): string {
+  if (tipo === 'texto') return nomeDoCodigo(conteudo, indice, extensao);
+  return `qrcode-${tipo}.${extensao}`;
 }
 
 // ---------------------------------------------------------------- folha ---
@@ -373,8 +388,25 @@ async function montarFolha(
 
 // ------------------------------------------------------------- QR Code ---
 
+/**
+ * O que a tela pediu, virado no texto que o celular entende.
+ *
+ * O tipo "texto" é o caminho antigo: uma linha por código, para gerar em
+ * lote. Os outros montam um formato só — não faz sentido colar uma coluna de
+ * planilha num campo de chave PIX.
+ */
+function conteudosDoPedido(opcoes: RunContext['options']): string[] {
+  const tipo = String(opcoes.tipo ?? 'texto') as TipoDeConteudo;
+  if (tipo === 'texto') return linhasDeConteudo(opcoes.conteudo);
+
+  const campos: Record<string, string> = {};
+  for (const [chave, valor] of Object.entries(opcoes)) campos[chave] = String(valor ?? '');
+  return [montarConteudo(tipo, campos)];
+}
+
 export async function gerarQrCode(ctx: RunContext): Promise<RunResult> {
-  const conteudos = linhasDeConteudo(ctx.options.conteudo);
+  const conteudos = conteudosDoPedido(ctx.options);
+  const tipo = String(ctx.options.tipo ?? 'texto') as TipoDeConteudo;
   const correcao = correcaoValida(ctx.options.correcao);
   const saida = String(ctx.options.saida ?? 'png');
   const ladoMm = limitar(ctx.options.ladoMm, 5, 200, 30);
@@ -383,9 +415,18 @@ export async function gerarQrCode(ctx: RunContext): Promise<RunResult> {
   const maiorVersao = Math.max(...matrizes.map((matriz) => matriz.versao));
 
   const notas = [
-    `Correção de erro ${correcao}: o código continua legível com parte dele danificada.`,
+    tipo === 'texto'
+      ? `Correção de erro ${correcao}: o código continua legível com parte dele danificada.`
+      : `${TIPOS[tipo].nome}: ${TIPOS[tipo].sobre}`,
     'A borda branca em volta faz parte do código. Cortar rente é o motivo mais comum de um QR impresso não ler.',
   ];
+  if (tipo === 'pix') {
+    notas.push(
+      'O código segue o padrão do Banco Central, com o verificador calculado no fim. ' +
+        'O mesmo texto serve como PIX copia e cola.',
+    );
+    notas.push('Confira com um pagamento de teste antes de imprimir em quantidade: chave errada não dá erro nenhum.');
+  }
   if (maiorVersao >= 10) {
     notas.push(
       `O conteúdo mais longo gerou um código de versão ${maiorVersao}, com muitos módulos. ` +
@@ -432,7 +473,7 @@ export async function gerarQrCode(ctx: RunContext): Promise<RunResult> {
     const blob = await salvarPdf(doc);
     ctx.onProgress(1);
     return {
-      files: [{ name: 'qrcode.pdf', blob, pages: doc.getPageCount() }],
+      files: [{ name: tipo === 'texto' ? 'qrcode.pdf' : `qrcode-${tipo}.pdf`, blob, pages: doc.getPageCount() }],
       inputBytes: 0,
       outputBytes: blob.size,
       notes: [`Cada página tem ${ladoMm}x${ladoMm} mm, do tamanho exato do código.`, ...notas],
@@ -445,7 +486,7 @@ export async function gerarQrCode(ctx: RunContext): Promise<RunResult> {
     ctx.onProgress(i / matrizes.length, `${i + 1} de ${matrizes.length}`);
     const canvas = qrEmCanvas(matrizes[i], pixels);
     saidas.push({
-      name: nomeDoCodigo(conteudos[i], i, 'png'),
+      name: nomeDoQr(tipo, conteudos[i], i, 'png'),
       blob: await canvasToBlob(canvas, 'image/png'),
     });
     await yieldToBrowser();
