@@ -3,13 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { CloudOff, FolderOpen, UploadCloud } from 'lucide-react';
 import { cx } from '@/lib/utils';
-import {
-  aoLerArquivo,
-  escolherArquivos,
-  estaNoAplicativo,
-  lerArquivoEscolhido,
-  type ArquivoEscolhido,
-} from '@/lib/desktop';
+import { type ArquivoEscolhido } from '@/lib/desktop';
+import { useSeletorDeArquivos } from './useSeletorDeArquivos';
 
 export function Dropzone({
   accept,
@@ -33,56 +28,18 @@ export function Dropzone({
   /** Chamado quando a leitura não foi até o fim, para tirar o marcador da tela. */
   onFalha?: (nomes: string[], erro: string) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
-  const [noApp, setNoApp] = useState(false);
 
-  useEffect(() => setNoApp(estaNoAplicativo()), []);
-
-  /**
-   * No aplicativo o diálogo é o do Windows, que lembra a última pasta e
-   * mostra os locais do sistema. O seletor do navegador não faz isso.
-   */
-  async function abrir() {
-    if (!noApp) {
-      inputRef.current?.click();
-      return;
-    }
-
-    const escolhidos = await escolherArquivos(accept.filter((tipo) => tipo.startsWith('.')));
-    if (!escolhidos.length) return;
-
-    const lista = multiple ? escolhidos : escolhidos.slice(0, 1);
-    // A tela mostra os arquivos aqui, antes de ler: é o que faltava para não
-    // ficar tudo mudo enquanto um arquivo grande carrega.
-    onEscolhidos?.(lista);
-
-    const cancelar = onLendo
-      ? aoLerArquivo(({ caminho, lidos, total }) => {
-          const alvo = lista.find((e) => e.caminho === caminho);
-          if (alvo) onLendo(alvo.nome, lidos, total);
-        })
-      : () => {};
-
-    try {
-      const arquivos: File[] = [];
-      // Um de cada vez: dois arquivos de 400 MB lidos juntos dobram a memória
-      // sem adiantar nada, porque o disco é o mesmo.
-      for (const escolhido of lista) {
-        arquivos.push(await lerArquivoEscolhido(escolhido));
-      }
-      onFiles(arquivos);
-    } catch (erro) {
-      // Sem isto o marcador na tela ficaria em "carregando" para sempre.
-      onFalha?.(
-        lista.map((e) => e.nome),
-        erro instanceof Error ? erro.message : 'Não foi possível ler o arquivo.',
-      );
-    } finally {
-      cancelar();
-    }
-  }
+  // O mesmo caminho que o botao de juntar mais PDFs usa na grade de paginas.
+  const { abrir, inputProps, noApp } = useSeletorDeArquivos({
+    accept,
+    multiple,
+    onFiles,
+    onEscolhidos,
+    onLendo,
+    onFalha,
+  });
 
   // Colar um arquivo (Ctrl+V) é o caminho mais rápido depois de um print.
   useEffect(() => {
@@ -141,18 +98,7 @@ export function Dropzone({
         compact ? 'p-5' : 'p-10 sm:p-14',
       )}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        className="sr-only"
-        accept={accept.join(',')}
-        multiple={multiple}
-        onChange={(event) => {
-          const files = [...(event.target.files ?? [])];
-          if (files.length) onFiles(files);
-          event.target.value = '';
-        }}
-      />
+      <input {...inputProps} />
 
       <button
         type="button"

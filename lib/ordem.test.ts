@@ -95,3 +95,35 @@ describe('os campos que aparecem conforme o modo', () => {
     expect(isFieldVisible(campo, { ...opcoes, mode: 'ranges' })).toBe(false);
   });
 });
+
+describe('as chaves dos campos', () => {
+  it('nenhuma ferramenta repete a chave de um campo', () => {
+    /*
+     * Chave repetida não estoura: os dois campos aparecem na tela com a mesma
+     * identidade, o React reclama a cada renderização, e o valor padrão de um
+     * sobrescreve o do outro em silêncio.
+     *
+     * Aconteceu no gerador de QR, quando cada tipo de conteúdo ganhou os seus
+     * campos: `nome` servia ao PIX e ao contato, `numero` ao WhatsApp e ao
+     * contato, `mensagem` ao WhatsApp e ao e-mail. A saída é um campo só,
+     * aparecendo em mais de um tipo pelo `showIf` de lista.
+     */
+    for (const tool of TOOLS) {
+      const chaves = tool.fields.map((campo) => campo.key);
+      const repetidas = [...new Set(chaves.filter((c, i) => chaves.indexOf(c) !== i))];
+      expect(repetidas, `${tool.slug} repete: ${repetidas.join(', ')}`).toEqual([]);
+    }
+  });
+
+  it('todo campo com showIf aponta para um campo que existe', () => {
+    // Apontar para uma chave que não existe faz o campo nunca aparecer — sem
+    // erro nenhum, e sem ninguém notar até alguém procurar a opção.
+    for (const tool of TOOLS) {
+      const chaves = new Set(tool.fields.map((campo) => campo.key));
+      for (const campo of tool.fields) {
+        if (!campo.showIf) continue;
+        expect(chaves.has(campo.showIf.key), `${tool.slug}: ${campo.key} depende de ${campo.showIf.key}`).toBe(true);
+      }
+    }
+  });
+});

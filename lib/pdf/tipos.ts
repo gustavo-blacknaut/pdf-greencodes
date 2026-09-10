@@ -48,7 +48,19 @@ export type RunContext = {
   signal?: AbortSignal;
 };
 
-export type PagePlanItem = { i: number; r: number };
+/**
+ * Uma página do documento remontado.
+ *
+ * `i` é a página na origem e `r` o giro em graus. Os dois campos opcionais
+ * vieram depois, quando o organizar deixou de trabalhar com um arquivo só:
+ *
+ * - `f` diz de qual arquivo da fila a página veio. Ausente significa o
+ *   primeiro, que é como todo plano antigo se comporta — e é o que mantém
+ *   funcionando quem já tinha um plano salvo.
+ * - `branco` é uma folha em branco inserida ali. Ela não vem de lugar nenhum,
+ *   então `i` não vale nada nesse caso.
+ */
+export type PagePlanItem = { i: number; r: number; f?: number; branco?: boolean };
 
 export type ElementoEditor = {
   id: string;

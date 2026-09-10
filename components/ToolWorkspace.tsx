@@ -17,6 +17,7 @@ import { Dropzone } from './Dropzone';
 import { FilaDeArquivos, type ArquivoNaFila } from './FilaDeArquivos';
 import { OptionField } from './OptionField';
 import { PageBoard } from './PageBoard';
+import { useSeletorDeArquivos } from './useSeletorDeArquivos';
 import { PdfEditor } from './PdfEditor';
 import { RegistroDeProgresso, type LinhaDoRegistro } from './RegistroDeProgresso';
 import { ResultPanel } from './ResultPanel';
@@ -259,6 +260,21 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   // No aplicativo, arquivo aberto pelo Explorador ou pelo menu do botao
   // direito entra direto na ferramenta que estiver na tela.
   useEffect(() => aoReceberArquivosDoSistema(addFiles), [addFiles]);
+
+  /*
+   * O mesmo seletor do Dropzone, para a grade poder juntar mais PDFs.
+   *
+   * O Dropzone some assim que a grade aparece — ela toma o lugar dele —, e
+   * sem isto o botão "Adicionar PDF" não teria como abrir o diálogo.
+   */
+  const seletor = useSeletorDeArquivos({
+    accept: tool.accept,
+    multiple: tool.multiple,
+    onFiles: addFiles,
+    onEscolhidos: mostrarEscolhidos,
+    onLendo: marcarLeitura,
+    onFalha: descartarMarcadores,
+  });
 
   /** Destrava um PDF protegido com a senha que a pessoa digitou. */
   async function destravar(id: string, senha: string) {
@@ -596,7 +612,13 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       ) : tool.board ? (
         ready[0]?.data ? (
           <div className="space-y-4">
-            <PageBoard file={ready[0].data} mode={tool.board} onPlanChange={handlePlanChange} />
+            <input {...seletor.inputProps} />
+            <PageBoard
+              files={ready.map((item) => item.data!)}
+              mode={tool.board}
+              onPlanChange={handlePlanChange}
+              onPedirArquivos={tool.multiple ? () => void seletor.abrir() : undefined}
+            />
             <div className="card space-y-4 p-4 sm:p-5">
               <div className="flex items-center gap-2">
                 <p className="text-xs leading-relaxed text-muted">{BOARD_HINTS[tool.board]}</p>

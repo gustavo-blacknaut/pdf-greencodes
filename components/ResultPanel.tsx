@@ -56,12 +56,70 @@ export function ResultPanel({
   // foi salvo muda de ideia sem precisar salvar de novo.
   const [apagarEm1Dia, setApagarEm1Dia] = useState(false);
   const [salvos, setSalvos] = useState<string[]>([]);
+  /**
+   * Onde cada arquivo foi parar no disco.
+   *
+   * Sem isto, abrir um arquivo que já tinha sido gravado gravaria de novo,
+   * com o próximo número livre — e a pasta encheria de cópias do mesmo PDF.
+   */
+  const [caminhoDe, setCaminhoDe] = useState<Record<string, string>>({});
+  const [gravando, setGravando] = useState(false);
   const [bulkDownloaded, setBulkDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => vault.subscribe(() => force((n) => n + 1)), []);
 
   useEffect(() => setNoApp(estaNoAplicativo()), []);
+
+  /**
+   * No aplicativo, o arquivo vai para o disco assim que fica pronto.
+   *
+   * Antes ele só era gravado quando alguém clicava em "Abrir" ou "Salvar".
+   * Quem processava e fechava a janela perdia o trabalho sem aviso — o
+   * resultado vivia só na memória da aba. E quem só queria o arquivo tinha
+   * que pedir duas vezes: uma para converter, outra para guardar.
+   *
+   * No site isto não acontece e não tem como acontecer: o navegador não
+   * escreve na pasta de downloads sem a pessoa mandar. Lá o botão continua.
+   */
+  useEffect(() => {
+    const atual = vault.get(entryId);
+    if (!noApp || !atual) return;
+
+    let cancelado = false;
+    setGravando(true);
+
+    (async () => {
+      const caminhos: string[] = [];
+      const porNome: Record<string, string> = {};
+
+      for (const arquivo of atual.files) {
+        const salvo = await salvarNumerado(arquivo.name, arquivo.blob, false);
+        if (cancelado) return;
+        if (!salvo.ok || !salvo.caminho) {
+          setError(salvo.erro ?? 'Não foi possível salvar o arquivo automaticamente.');
+          break;
+        }
+        caminhos.push(salvo.caminho);
+        porNome[arquivo.name] = salvo.caminho;
+      }
+
+      if (cancelado) return;
+      if (caminhos.length) {
+        setSalvos(caminhos);
+        setCaminhoDe(porNome);
+        setSalvoEm(caminhos[caminhos.length - 1]);
+      }
+      setGravando(false);
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+    // De propósito só quando o aplicativo é reconhecido: o resultado desta
+    // tela não muda de identidade sem a tela inteira ser remontada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noApp, entryId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -114,28 +172,33 @@ export function ResultPanel({
   }
 
   /**
-   * Salva e abre, sem diálogo.
+   * Abre o arquivo, gravando antes só se ainda não estiver no disco.
    *
-   * O nome vira o primeiro número livre em Documentos/PDF.GreenCodes: 1.pdf,
-   * 2.pdf, 3.pdf. Quem processa vários documentos seguidos não quer decidir
-   * nome e pasta a cada um.
+   * No aplicativo ele já foi gravado assim que ficou pronto, então aqui
+   * normalmente só resta abrir. Gravar de novo daria o próximo número livre
+   * e deixaria duas cópias do mesmo PDF na pasta.
    */
   async function abrirUm(fileName: string) {
     setError(null);
     const arquivo = entry!.files.find((f) => f.name === fileName);
     if (!arquivo) return;
 
-    const salvo = await salvarNumerado(arquivo.name, arquivo.blob, apagarEm1Dia);
-    if (!salvo.ok || !salvo.caminho) {
-      setError(salvo.erro ?? 'Não foi possível salvar o arquivo.');
-      return;
+    let caminho = caminhoDe[fileName];
+    if (!caminho) {
+      const salvo = await salvarNumerado(arquivo.name, arquivo.blob, apagarEm1Dia);
+      if (!salvo.ok || !salvo.caminho) {
+        setError(salvo.erro ?? 'Não foi possível salvar o arquivo.');
+        return;
+      }
+      caminho = salvo.caminho;
+      setCaminhoDe((antigos) => ({ ...antigos, [fileName]: caminho }));
+      setSalvos((antigos) => [...antigos, caminho]);
     }
-    setSalvoEm(salvo.caminho);
-    setSalvos((antigos) => [...antigos, salvo.caminho!]);
 
+    setSalvoEm(caminho);
     // No próprio programa: é o que evita depender de qual leitor de PDF a
     // máquina tem instalado, e o que a pessoa pediu.
-    const aberto = await abrirNoAplicativo(salvo.caminho);
+    const aberto = await abrirNoAplicativo(caminho);
     if (!aberto.ok) setError(aberto.erro ?? null);
   }
 
@@ -146,6 +209,11 @@ export function ResultPanel({
 
     const caminhos: string[] = [];
     for (const arquivo of entry!.files) {
+      // O que a gravação automática já pôs no disco não é gravado de novo.
+      if (caminhoDe[arquivo.name]) {
+        caminhos.push(caminhoDe[arquivo.name]);
+        continue;
+      }
       const r = await salvarNumerado(arquivo.name, arquivo.blob, apagarEm1Dia);
       if (!r.ok || !r.caminho) {
         setError(r.erro ?? 'Não foi possível salvar os arquivos.');
@@ -155,7 +223,12 @@ export function ResultPanel({
     }
     if (caminhos.length > 0) {
       setSalvoEm(caminhos[caminhos.length - 1]);
-      setSalvos((antigos) => [...antigos, ...caminhos]);
+      // `Set` porque a gravação automática já pode ter posto os mesmos
+      // caminhos aqui: repetir faria a auto-exclusão passar duas vezes no
+      // mesmo arquivo.
+      setSalvos((antigos) => [...new Set([...antigos, ...caminhos])]);
+      // Já estando tudo no disco, o que resta a fazer é mostrar onde.
+      await revelarNoExplorador(caminhos[caminhos.length - 1]);
     }
   }
 
@@ -223,7 +296,8 @@ export function ResultPanel({
 
         {noApp ? (
           <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs text-brand">
-            <HardDrive className="h-3.5 w-3.5" /> salve onde quiser
+            <HardDrive className="h-3.5 w-3.5" />
+            {gravando ? 'salvando...' : salvos.length ? 'já salvo em Downloads' : 'salve onde quiser'}
           </span>
         ) : (
           <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs tabular-nums text-muted">
@@ -346,7 +420,9 @@ export function ResultPanel({
             {noApp ? <ExternalLink className="h-4 w-4" /> : <Download className="h-4 w-4" />}
             {noApp
               ? entry.files.length > 1
-                ? 'Salvar todos'
+                ? salvos.length
+                  ? 'Abrir a pasta'
+                  : 'Salvar todos'
                 : 'Abrir'
               : entry.files.length > 1
                 ? zipping
@@ -385,9 +461,11 @@ export function ResultPanel({
         <p className="mt-3 text-[11px] leading-relaxed text-muted">
           {noApp ? (
             <>
-              O arquivo vai para <strong className="font-medium text-ink">Downloads/PDF.GreenCodes</strong> e fica lá,
-              sem prazo. Marque <strong className="font-medium text-ink">Apagar sozinho em 1 dia</strong> se for só
-              para imprimir agora — vale para os que já foram salvos também.
+              {salvos.length ? 'O arquivo já está em ' : 'O arquivo vai para '}
+              <strong className="font-medium text-ink">Downloads/PDF.GreenCodes</strong>
+              {salvos.length ? ', salvo assim que ficou pronto' : ' e fica lá'}, sem prazo. Marque{' '}
+              <strong className="font-medium text-ink">Apagar sozinho em 1 dia</strong> se for só para imprimir agora —
+              vale para os que já foram salvos também.
             </>
           ) : (
             <>

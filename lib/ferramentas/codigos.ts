@@ -1,6 +1,7 @@
 import { FORMATOS_MM } from '../pdf/nucleo';
 import { CORRECOES } from '../codigos/qr';
 import { SIMBOLOGIAS } from '../codigos/barras';
+import { TIPOS } from '../codigos/conteudo';
 import type { Field, Tool } from './tipos';
 
 /**
@@ -74,9 +75,9 @@ export const CODIGOS: Tool[] = [
     slug: 'gerar-qrcode',
     operation: 'qr-code',
     name: 'Gerar QR Code',
-    tagline: 'Um por linha, em PNG ou em folha de etiquetas',
+    tagline: 'Link, WhatsApp, PIX, wi-fi — ou texto em lote',
     description:
-      'Endereço de site, PIX copia-e-cola, wi-fi, telefone, texto: o que estiver escrito vira QR Code. Uma linha para cada código, então dá para colar uma coluna inteira da planilha e receber tudo de uma vez. No PDF o código sai em vetor, e é isso que faz ele ler impresso pequeno.',
+      'Escolha para que serve e a ferramenta monta o formato certo: link, conversa de WhatsApp com a mensagem já digitada, PIX com valor e nome de quem recebe, rede de wi-fi que conecta sem digitar senha, telefone, e-mail, SMS ou contato para a agenda. No modo texto, cada linha vira um código — dá para colar uma coluna inteira de planilha. No PDF o código sai em vetor, que é o que faz ele ler impresso pequeno.',
     icon: 'QrCode',
     accent: '20 184 166',
     category: 'Códigos',
@@ -93,12 +94,181 @@ export const CODIGOS: Tool[] = [
     cta: 'Gerar',
     fields: [
       {
+        key: 'tipo',
+        type: 'select',
+        label: 'O código serve para',
+        default: 'link',
+        options: Object.entries(TIPOS).map(([valor, dados]) => ({
+          value: valor,
+          label: dados.nome,
+          hint: dados.sobre,
+        })),
+        help: 'O QR guarda texto e mais nada — o que faz o celular abrir o WhatsApp ou o PIX é o formato desse texto. Escolher aqui monta o formato certo.',
+      },
+
+      // --- link ---
+      {
+        key: 'url',
+        type: 'text',
+        label: 'Endereço',
+        default: '',
+        placeholder: 'greencodes.com.br',
+        help: 'Sem o https na frente, a gente põe.',
+        showIf: { key: 'tipo', equals: 'link' },
+      },
+
+      // --- whatsapp ---
+      {
+        key: 'numero',
+        type: 'text',
+        label: 'Número com DDD',
+        default: '',
+        placeholder: '(31) 99999-8888',
+        help: 'Sem o país, entra o 55 do Brasil.',
+        showIf: { key: 'tipo', equals: ['whatsapp', 'telefone', 'sms', 'contato'] },
+      },
+      {
+        key: 'mensagem',
+        type: 'texto-longo',
+        label: 'Mensagem já digitada',
+        default: '',
+        placeholder: 'Olá! Vim pelo QR Code.',
+        help: 'Opcional. Aparece escrita na conversa, e a pessoa só aperta enviar.',
+        showIf: { key: 'tipo', equals: ['whatsapp', 'sms', 'email'] },
+      },
+
+      // --- pix ---
+      {
+        key: 'chave',
+        type: 'text',
+        label: 'Chave PIX',
+        default: '',
+        placeholder: 'email, CPF, CNPJ, telefone ou chave aleatória',
+        showIf: { key: 'tipo', equals: 'pix' },
+      },
+      {
+        key: 'nome',
+        type: 'text',
+        label: 'Nome',
+        default: '',
+        placeholder: 'GreenCodes',
+        help: 'Até 25 letras, sem acento — é o que a norma aceita. O que passar é cortado.',
+        showIf: { key: 'tipo', equals: 'pix' },
+      },
+      {
+        key: 'cidade',
+        type: 'text',
+        label: 'Cidade',
+        default: '',
+        placeholder: 'Belo Horizonte',
+        help: 'Até 15 letras.',
+        showIf: { key: 'tipo', equals: 'pix' },
+      },
+      {
+        key: 'valor',
+        type: 'text',
+        label: 'Valor',
+        default: '',
+        placeholder: '25,90',
+        help: 'Deixe vazio para quem paga digitar quanto quer — é o caso da caixinha e da vaquinha.',
+        showIf: { key: 'tipo', equals: 'pix' },
+      },
+      {
+        key: 'identificador',
+        type: 'text',
+        label: 'Identificador da cobrança',
+        default: '',
+        placeholder: 'PEDIDO123',
+        help: 'Opcional. Volta no seu extrato, e ajuda a saber que pagamento é qual. Só letras e números.',
+        showIf: { key: 'tipo', equals: 'pix' },
+      },
+
+      // --- wi-fi ---
+      {
+        key: 'rede',
+        type: 'text',
+        label: 'Nome da rede',
+        default: '',
+        placeholder: 'GreenCodes',
+        showIf: { key: 'tipo', equals: 'wifi' },
+      },
+      {
+        key: 'seguranca',
+        type: 'select',
+        label: 'Segurança',
+        default: 'WPA',
+        options: [
+          { value: 'WPA', label: 'WPA / WPA2 / WPA3', hint: 'o normal em qualquer roteador de hoje' },
+          { value: 'WEP', label: 'WEP', hint: 'só em equipamento antigo' },
+          { value: 'NOPASS', label: 'Rede aberta', hint: 'sem senha' },
+        ],
+        showIf: { key: 'tipo', equals: 'wifi' },
+      },
+      {
+        key: 'senha',
+        type: 'text',
+        label: 'Senha da rede',
+        default: '',
+        showIf: { key: 'tipo', equals: 'wifi' },
+      },
+      {
+        key: 'oculta',
+        type: 'toggle',
+        label: 'A rede é oculta',
+        default: false,
+        help: 'Marque só se o nome dela não aparece na lista do celular.',
+        showIf: { key: 'tipo', equals: 'wifi' },
+      },
+
+      // --- e-mail ---
+      {
+        key: 'para',
+        type: 'text',
+        label: 'Para',
+        default: '',
+        placeholder: 'contato@exemplo.com.br',
+        showIf: { key: 'tipo', equals: 'email' },
+      },
+      {
+        key: 'assunto',
+        type: 'text',
+        label: 'Assunto',
+        default: '',
+        showIf: { key: 'tipo', equals: 'email' },
+      },
+
+      // --- contato ---
+      {
+        key: 'empresa',
+        type: 'text',
+        label: 'Empresa',
+        default: '',
+        showIf: { key: 'tipo', equals: 'contato' },
+      },
+      {
+        key: 'email',
+        type: 'text',
+        label: 'E-mail',
+        default: '',
+        showIf: { key: 'tipo', equals: 'contato' },
+      },
+      {
+        key: 'site',
+        type: 'text',
+        label: 'Site',
+        default: '',
+        showIf: { key: 'tipo', equals: 'contato' },
+      },
+
+      // --- texto solto, que é também o modo em lote ---
+      {
         key: 'conteudo',
         type: 'texto-longo',
         label: 'O que vai dentro',
         default: '',
         placeholder: 'https://exemplo.com.br\n\nUma linha para cada código.',
-        help: 'Cada linha vira um QR Code. Linha vazia é ignorada.',
+        help: 'Cada linha vira um QR Code separado. É por aqui que se cola uma coluna inteira de planilha.',
+        showIf: { key: 'tipo', equals: 'texto' },
       },
       SAIDA,
       {
