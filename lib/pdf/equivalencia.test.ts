@@ -17,6 +17,7 @@ import path from 'node:path';
 import { runOperation, type LoadedFile, type OperationId, type RunContext } from './engine';
 import { temMotorPython } from './motor-python';
 import { PonteDeTeste } from './ponte-de-teste';
+import { substituirMotorParaTeste, type MotorPython } from '../desktop';
 
 const RAIZ = process.cwd();
 
@@ -36,26 +37,24 @@ if (!TEM_MOTOR) {
 }
 
 let ponte: PonteDeTeste;
-let janelaAntes: unknown;
 
 beforeAll(() => {
   if (!TEM_MOTOR) return;
   ponte = new PonteDeTeste(RAIZ);
-  janelaAntes = (globalThis as { window?: unknown }).window;
 });
 
 afterAll(() => {
-  (globalThis as { window?: unknown }).window = janelaAntes;
+  substituirMotorParaTeste(null);
   ponte?.desligar();
 });
 
 /** Liga a ponte só durante a chamada, para o outro lado rodar em JavaScript. */
 async function comPython<T>(trabalho: () => Promise<T>): Promise<T> {
-  (globalThis as { window?: unknown }).window = { greenpdf: { ehAplicativo: true, motor: ponte.api } };
+  substituirMotorParaTeste(ponte.api as unknown as MotorPython);
   try {
     return await trabalho();
   } finally {
-    (globalThis as { window?: unknown }).window = undefined;
+    substituirMotorParaTeste(null);
   }
 }
 

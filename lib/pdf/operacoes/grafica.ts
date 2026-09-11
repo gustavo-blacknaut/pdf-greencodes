@@ -606,7 +606,17 @@ export async function repeatPages(ctx: RunContext): Promise<RunResult> {
     }
   }
 
-  const blob = await salvarPdf(out, source.senha);
+  const montado = await salvarPdf(out, source.senha);
+
+  /*
+   * O pdf-lib copia cada imagem de novo a cada cópia da página: 6 páginas com
+   * uma foto, repetidas duas vezes, saíam com 12 cópias da mesma foto — 138 KB
+   * virando 1,5 MB. A compactação sem perda deixa uma só e aponta as outras
+   * para ela, sem mexer em nada do que está desenhado. É a mesma do Juntar.
+   */
+  ctx.onProgress(0.97, 'Compactando sem perder qualidade');
+  const { compactarSemPerda } = await import('../motor-python');
+  const blob = await compactarSemPerda(montado, source.senha);
   ctx.onProgress(1);
 
   return {

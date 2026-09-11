@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { LIMITES, pareceMesmoImagem, pareceMesmoPdf, validarFila } from './guards';
+import {
+  ArquivoRejeitado,
+  LIMITES,
+  pareceMesmoImagem,
+  pareceMesmoPdf,
+  usarLimitesDoAplicativo,
+  validarFila,
+} from './guards';
 
 function bytes(...conteudo: (string | number[])[]): ArrayBuffer {
   const partes = conteudo.flatMap((parte) =>
@@ -51,26 +58,51 @@ describe('pareceMesmoImagem', () => {
 });
 
 describe('validarFila', () => {
+  const MB = 1024 * 1024;
+  const GB = 1024 * MB;
   const arquivo = (name: string, size: number) => ({ name, size });
+  const pegar = (fazer: () => void): ArquivoRejeitado => {
+    try {
+      fazer();
+    } catch (e) {
+      return e as ArquivoRejeitado;
+    }
+    throw new Error('era para ter recusado');
+  };
 
   it('aceita uma fila dentro dos limites', () => {
     expect(() => validarFila([arquivo('a.pdf', 1024)], [])).not.toThrow();
   });
 
-  it('recusa arquivo acima do teto individual', () => {
-    expect(() => validarFila([arquivo('grande.pdf', LIMITES.bytesPorArquivo + 1)], [])).toThrow(
-      /limite por arquivo/,
-    );
+  it('no site, recusa acima de 200 MB e manda para o aplicativo', () => {
+    expect(LIMITES.bytesPorArquivo).toBe(200 * MB);
+    expect(() => validarFila([arquivo('cabe.pdf', 200 * MB)], [])).not.toThrow();
+
+    const erro = pegar(() => validarFila([arquivo('grande.pdf', 200 * MB + 1)], []));
+    expect(erro).toBeInstanceOf(ArquivoRejeitado);
+    expect(erro.message).toMatch(/site aceita até 200 MB/);
+    expect(erro.message).toMatch(/aplicativo/);
+    expect(erro.sugereAplicativo).toBe(true);
   });
 
-  it('recusa quando a soma com o que já está na fila estoura o teto', () => {
-    // Cada arquivo cabe sozinho no teto individual; o problema é a soma.
-    // Sem estourar o teto de quantidade de arquivos, então o tamanho de cada
-    // um precisa ser grande o bastante para a soma passar do teto total.
-    const necessarios = Math.ceil(LIMITES.bytesTotais / LIMITES.bytesPorArquivo) + 1;
-    const cabeSozinho = Math.floor(LIMITES.bytesTotais / (necessarios - 1));
-    const jaNaFila = Array.from({ length: necessarios - 1 }, () => ({ size: cabeSozinho }));
-    expect(() => validarFila([arquivo('novo.pdf', cabeSozinho)], jaNaFila)).toThrow(/limite é/);
+  it('no site, a soma da fila também conta, sem limite de páginas', () => {
+    // Cada arquivo cabe sozinho; o que passa é a soma dos dois.
+    const erro = pegar(() => validarFila([arquivo('b.pdf', 120 * MB)], [{ size: 120 * MB }]));
+    expect(erro.message).toMatch(/somam 240 MB/);
+    expect(erro.sugereAplicativo).toBe(true);
+  });
+
+  it('no aplicativo, arquivo de 1 GB passa e o teto é 2 GB', () => {
+    usarLimitesDoAplicativo(true);
+    try {
+      expect(() => validarFila([arquivo('digitalizacao.pdf', 1.5 * GB)], [])).not.toThrow();
+      const erro = pegar(() => validarFila([arquivo('enorme.pdf', 2 * GB + 1)], []));
+      expect(erro.message).toMatch(/limite por arquivo é 2 GB/);
+      // No aplicativo não há para onde mandar: sugerir o próprio app seria piada.
+      expect(erro.sugereAplicativo).toBe(false);
+    } finally {
+      usarLimitesDoAplicativo(false);
+    }
   });
 
   it('recusa arquivos demais', () => {

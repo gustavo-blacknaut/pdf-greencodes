@@ -1,0 +1,30 @@
+[package]
+name = "pdf-greencodes"
+version = "4.1.0"
+description = "Ferramentas de PDF para grafica"
+authors = ["gustavo-blacknaut"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-ico"] }
+# Disco e processos passam por comandos proprios, em Rust: a janela nao
+# recebe os plugins de fs e shell, que dariam a ela o disco e o terminal
+# inteiros se um PDF malicioso conseguisse rodar script.
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# O instalador carrega o motor Python e o auxiliar de impressao junto. Sem
+# LTO e com o binario enxuto, o que pesa no pacote e o motor, nao o Rust.
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

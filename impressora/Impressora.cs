@@ -14,6 +14,7 @@
 //   impressora.exe configurar --impressora "HP LaserJet" [--modo <base64>]
 //   impressora.exe imprimir   --impressora "HP LaserJet" --paginas lista.txt
 //                             [--modo <base64>] [--copias 2] [--titulo "x"] [--preencher]
+//                             [--papel 9] [--paisagem] [--cor 0|1] [--duplex vertical]
 //                             [--arquivo saida.pdf]
 
 using System;
@@ -70,17 +71,31 @@ static class Impressora
                         if (caminho.Length > 0) imagens.Add(caminho);
                     }
 
+                    int papel;
+                    if (!int.TryParse(Ler(opcoes, "papel"), out papel)) papel = 0;
+
                     int copias;
                     if (!int.TryParse(Ler(opcoes, "copias"), out copias)) copias = 1;
 
-                    Console.Out.Write(Trabalho.Imprimir(
-                        Exigir(opcoes, "impressora"),
-                        imagens,
-                        Ler(opcoes, "modo"),
-                        copias,
-                        Ler(opcoes, "titulo"),
-                        !opcoes.ContainsKey("preencher"),
-                        Ler(opcoes, "arquivo")));
+                    // Sem --cor na linha de comando, a cor fica como o driver
+                    // ja esta: -1 quer dizer "nao mexe".
+                    int cor;
+                    if (!int.TryParse(Ler(opcoes, "cor"), out cor)) cor = -1;
+
+                    var pedido = new Pedido();
+                    pedido.Impressora = Exigir(opcoes, "impressora");
+                    pedido.Imagens = imagens;
+                    pedido.Devmode = Ler(opcoes, "modo");
+                    pedido.Copias = copias;
+                    pedido.Titulo = Ler(opcoes, "titulo");
+                    pedido.Ajustar = !opcoes.ContainsKey("preencher");
+                    pedido.Arquivo = Ler(opcoes, "arquivo");
+                    pedido.Papel = papel;
+                    pedido.Cor = cor;
+                    pedido.Duplex = Ler(opcoes, "duplex");
+                    pedido.Paisagem = opcoes.ContainsKey("paisagem");
+
+                    Console.Out.Write(Trabalho.Imprimir(pedido));
                     return 0;
                 }
 

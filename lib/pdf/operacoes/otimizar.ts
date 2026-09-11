@@ -259,7 +259,9 @@ export async function invertColors(ctx: RunContext): Promise<RunResult> {
   return redesenharComFiltro(
     ctx,
     filtroInverter,
-    'invertido',
+    // "negativo", e não "invertido": esse é o nome do Inverter páginas, e os
+    // dois resultados caíam com o mesmo nome na mesma pasta.
+    'negativo',
     [
       'O documento vira preto e branco invertido: o que era escuro fica claro e o que era claro fica escuro.',
       'As páginas viraram imagem, então o texto deixa de ser selecionável e pesquisável.',

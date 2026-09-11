@@ -159,7 +159,9 @@ def inverter_cor(pedido: Pedido) -> Dict[str, Any]:
     return _redesenhar(
         pedido,
         inverter,
-        "invertido",
+        # "negativo", e nao "invertido": esse e o nome que o inverter paginas
+        # usa, e os dois caiam no mesmo arquivo na mesma pasta.
+        "negativo",
         [
             "O que era escuro ficou claro e o que era claro ficou escuro.",
             "As paginas viraram imagem, entao o texto deixa de ser selecionavel.",

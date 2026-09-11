@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CloudOff, FolderOpen, UploadCloud } from 'lucide-react';
 import { cx } from '@/lib/utils';
-import { type ArquivoEscolhido } from '@/lib/desktop';
+import { aoArrastar, type ArquivoEscolhido } from '@/lib/desktop';
 import { useSeletorDeArquivos } from './useSeletorDeArquivos';
 
 export function Dropzone({
@@ -53,6 +53,10 @@ export function Dropzone({
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
   }, [multiple, onFiles]);
+
+  // No aplicativo o arrastar chega pelo Tauri, e não pelos eventos da página:
+  // é daqui que a zona sabe que tem arquivo por cima. Soltar é com a tela.
+  useEffect(() => aoArrastar(setDragging), []);
 
   // Arrastar em qualquer ponto da página conta como arrastar para a zona.
   useEffect(() => {

@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { LayoutGrid, Menu, X } from 'lucide-react';
-import { CATEGORIES, TOOLS_DO_SITE, rotaDaFerramenta } from '@/lib/tools';
+import { Download, LayoutGrid, Menu, X } from 'lucide-react';
+import { CATEGORIES, TOOLS_DO_SITE, TOOLS_SO_NO_APLICATIVO, rotaDaFerramenta } from '@/lib/tools';
 import { warmEngine } from '@/lib/pdf/lazy';
 import { cx } from '@/lib/utils';
 
@@ -48,9 +48,13 @@ export function Header() {
           <Link
             href="/#ferramentas"
             onPointerEnter={() => void warmEngine()}
-            className="btn-primary hidden sm:inline-flex"
+            className="btn-ghost hidden lg:inline-flex"
           >
             <LayoutGrid className="h-4 w-4" /> Ver ferramentas
+          </Link>
+          {/* A página, e não o arquivo direto: lá está o passo do SmartScreen. */}
+          <Link href="/baixar" className="btn-primary hidden sm:inline-flex">
+            <Download className="h-4 w-4" /> Baixar o aplicativo
           </Link>
           <button
             type="button"
@@ -88,6 +92,13 @@ export function Header() {
                 </div>
               );
             })}
+            <Link
+              href="/baixar"
+              onClick={() => setOpen(false)}
+              className="btn-primary w-full justify-center py-3"
+            >
+              <Download className="h-4 w-4" /> Baixar o aplicativo · mais {TOOLS_SO_NO_APLICATIVO.length} ferramentas
+            </Link>
           </div>
         </div>
       )}

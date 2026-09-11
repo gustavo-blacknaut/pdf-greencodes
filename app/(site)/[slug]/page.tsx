@@ -2,20 +2,29 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
+import { SoNoAplicativo } from '@/components/SoNoAplicativo';
 import { ToolWorkspace } from '@/components/ToolWorkspace';
-import { getTool, TOOLS_DO_SITE } from '@/lib/tools';
+import { funcionaNoSite, getTool, TOOLS, TOOLS_DO_SITE } from '@/lib/tools';
 
 type Params = { params: Promise<{ slug: string }> };
 
 export function generateStaticParams() {
+  // Todas ganham página: as do aplicativo levam ao download, em vez de 404.
   // A de impressão tem página própria; gerar /imprimir aqui colidiria com ela.
-  return TOOLS_DO_SITE.filter((tool) => !tool.rota).map((tool) => ({ slug: tool.slug }));
+  return TOOLS.filter((tool) => !tool.rota).map((tool) => ({ slug: tool.slug }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const tool = getTool(slug);
   if (!tool) return { title: 'Ferramenta não encontrada' };
+  if (!funcionaNoSite(tool)) {
+    return {
+      title: `${tool.name} no aplicativo para Windows`,
+      description: `${tool.description} Grátis, no aplicativo PDF.GreenCodes para Windows.`,
+      alternates: { canonical: `/${tool.slug}` },
+    };
+  }
   return {
     title: `${tool.name} online e privado`,
     description: `${tool.description} Sem upload: tudo roda no seu navegador.`,
@@ -27,6 +36,7 @@ export default async function ToolPage({ params }: Params) {
   const { slug } = await params;
   const tool = getTool(slug);
   if (!tool) notFound();
+  if (!funcionaNoSite(tool)) return <SoNoAplicativo tool={tool} />;
 
   const related = TOOLS_DO_SITE.filter((item) => item.slug !== tool.slug && item.category === tool.category).slice(0, 3);
 

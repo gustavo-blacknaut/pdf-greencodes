@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { ArrowRight, CloudOff, Gauge, Layers, Timer, WifiOff } from 'lucide-react';
+import { ArrowRight, CloudOff, Download, Gauge, Layers, Timer, WifiOff } from 'lucide-react';
 import { ToolGrid } from '@/components/ToolGrid';
-import { TOOLS } from '@/lib/tools';
+import { TOOLS, TOOLS_DO_SITE } from '@/lib/tools';
 
 export default function HomePage() {
   return (
@@ -41,8 +41,8 @@ export default function HomePage() {
             <Link href="/comprimir-pdf" className="btn-primary px-6 py-3 text-[15px]">
               Comprimir um PDF <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="#ferramentas" className="btn-ghost px-6 py-3 text-[15px]">
-              Ver as {TOOLS.length} ferramentas
+            <Link href="/baixar" className="btn-ghost px-6 py-3 text-[15px]">
+              <Download className="h-4 w-4" /> Aplicativo com as {TOOLS.length}
             </Link>
           </div>
 
@@ -52,7 +52,7 @@ export default function HomePage() {
           >
             {[
               { icon: Gauge, value: '0 ms', label: 'de espera em fila' },
-              { icon: Layers, value: String(TOOLS.length), label: 'ferramentas' },
+              { icon: Layers, value: String(TOOLS_DO_SITE.length), label: `no navegador, ${TOOLS.length} no app` },
               { icon: Timer, value: '10 min', label: 'de vida do resultado' },
               { icon: WifiOff, value: '0 KB', label: 'enviados à rede' },
             ].map((stat) => (

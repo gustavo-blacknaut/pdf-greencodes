@@ -7,6 +7,7 @@
  * contar páginas, gerar miniatura e destravar o que veio com senha.
  */
 
+import { arquivoNoDisco, motorPython } from '../desktop';
 import { yieldToBrowser } from '../utils';
 import { LIMITES, pareceMesmoDocx, pareceMesmoImagem, pareceMesmoPdf, pareceSerImagem } from './guards';
 import { isPasswordError, openWithPdfJs, openWithPdfLib, renderPageToCanvas } from './nucleo';
@@ -32,7 +33,42 @@ export async function imageThumbnail(file: File): Promise<string | null> {
   }
 }
 
+/**
+ * O PDF grande que ficou no disco: as páginas vêm do motor, que abre pelo
+ * caminho. Nada de miniatura — desenhar a página exigiria justamente carregar
+ * o documento na janela.
+ */
+async function inspecionarNoDisco(file: File, id: string, caminho: string, tamanho: number): Promise<LoadedFile> {
+  const base: LoadedFile = {
+    id,
+    name: file.name,
+    size: tamanho,
+    type: 'application/pdf',
+    bytes: new ArrayBuffer(0),
+    pageCount: null,
+    thumbnail: null,
+    caminho,
+  };
+  const motor = motorPython();
+  if (!motor) return { ...base, error: 'Arquivo grande só abre no aplicativo.' };
+  try {
+    const dados = (await motor.executar('informar', { arquivos: [caminho] })) as {
+      arquivos?: { paginas?: number; precisaSenha?: boolean }[];
+    };
+    const info = dados.arquivos?.[0];
+    if (info?.precisaSenha) {
+      return { ...base, error: 'Protegido por senha. Para arquivo deste tamanho, desbloqueie antes num arquivo menor.' };
+    }
+    return { ...base, pageCount: info?.paginas ?? null };
+  } catch (erro) {
+    return { ...base, error: erro instanceof Error ? erro.message : 'Não foi possível ler este PDF.' };
+  }
+}
+
 export async function inspectFile(file: File, id: string): Promise<LoadedFile> {
+  const emDisco = arquivoNoDisco(file);
+  if (emDisco) return inspecionarNoDisco(file, id, emDisco.caminho, emDisco.tamanho);
+
   const bytes = await file.arrayBuffer();
   const base: LoadedFile = {
     id,

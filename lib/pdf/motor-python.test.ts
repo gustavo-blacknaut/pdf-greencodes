@@ -176,6 +176,25 @@ describe('ida e volta pelo disco', () => {
     expect(motorFalso.limpar).toHaveBeenCalledWith('C:\\temp\\x');
   });
 
+  it('páginas que não são número não viram texto na tela', async () => {
+    // A cobertura de tinta manda em `paginas` a medição de cada página. Era
+    // isso que aparecia como "[object Object],[object Object]" no resultado.
+    motorFalso.executar.mockResolvedValue({
+      arquivo: 'C:\\temp\\x\\a-cobertura.txt',
+      paginas: [{ pagina: 1, maior: 280 }, { pagina: 2, maior: 310 }],
+      notas: ['Limite considerado: 300%.', { nao: 'e texto' }],
+    });
+    const resultado = await rodarNoPython('ink-coverage', contexto());
+    expect(resultado.files[0].pages).toBeUndefined();
+    expect(resultado.notes).toEqual(['Limite considerado: 300%.']);
+  });
+
+  it('a contagem de páginas de verdade continua passando', async () => {
+    motorFalso.executar.mockResolvedValue({ arquivo: 'C:\\temp\\x\\a.pdf', paginas: 6, notas: [] });
+    const resultado = await rodarNoPython('grayscale', contexto());
+    expect(resultado.files[0].pages).toBe(6);
+  });
+
   it('a senha do arquivo acompanha o pedido', async () => {
     const comSenha = contexto();
     comSenha.files[0].senha = 'segredo';

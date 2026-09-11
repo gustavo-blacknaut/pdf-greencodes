@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { BarChart3 } from 'lucide-react';
 import { versaoDoAplicativo } from '@/lib/desktop';
 import { PainelDeAtividade } from './PainelDeAtividade';
 
@@ -19,7 +21,10 @@ export function AppBar() {
         <span className="text-[15px] font-semibold tracking-tight">PDF.GreenCodes</span>
         {versao && <span className="text-xs tabular-nums text-muted">{versao}</span>}
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/app/uso" className="btn-ghost px-3 py-1.5 text-[13px]">
+            <BarChart3 className="h-4 w-4" /> Seu uso
+          </Link>
           <PainelDeAtividade />
         </div>
       </div>

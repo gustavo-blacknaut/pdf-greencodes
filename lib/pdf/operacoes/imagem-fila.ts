@@ -34,7 +34,9 @@ export async function entregar(
   const zip = await zipFiles(saidas.map((a) => ({ name: a.name, blob: a.blob })));
   ctx.onProgress(1);
   return {
-    files: [{ name: replaceExtension(`${sufixoDoZip}.zip`, 'zip'), blob: zip, pages: saidas.length }],
+    // Sem `pages`: a tela mostraria "3 páginas" para um zip de três fotos. A
+    // quantidade de imagens já vai na nota logo abaixo.
+    files: [{ name: replaceExtension(`${sufixoDoZip}.zip`, 'zip'), blob: zip }],
     inputBytes,
     outputBytes: zip.size,
     notes: [`${saidas.length} imagens, entregues num .zip.`, ...notas],
