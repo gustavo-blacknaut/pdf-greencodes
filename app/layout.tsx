@@ -32,6 +32,17 @@ export const viewport: Viewport = {
   themeColor: '#070f0b',
 };
 
+/**
+ * O canal do aplicativo com o Rust, que só entra no build do Tauri.
+ *
+ * Sem ele na política, o Tauri não consegue usar o canal de bytes crus e cai
+ * no reserva, que passa tudo por JSON: um PDF chegava na tela como a lista de
+ * números "37,80,68,70..." e toda ferramenta dizia que aquilo não era PDF. O
+ * Tauri define TAURI_ENV_PLATFORM para o build que ele mesmo dispara; o site
+ * sai sem isto e continua sem ter para onde mandar um documento.
+ */
+const CANAL_DO_APLICATIVO = process.env.TAURI_ENV_PLATFORM ? ' ipc: http://ipc.localhost' : '';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className="dark">
@@ -51,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
             "worker-src 'self' blob:",
-            "connect-src 'self' blob: data:",
+            `connect-src 'self' blob: data:${CANAL_DO_APLICATIVO}`,
             // blob: é o PDF que a própria página acabou de gerar, posto num
             // iframe escondido só para chamar a impressão. Nada externo entra.
             "frame-src blob:",

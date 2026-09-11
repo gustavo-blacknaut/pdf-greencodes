@@ -1,6 +1,6 @@
 {
   "name": "pdf-greencodes",
-  "version": "3.6.0",
+  "version": "4.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,19 +10,23 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "app:dev": "npm run build && electron .",
-    "app:build": "node scripts/conferir-motor.mjs && npm run build && electron-builder --win --publish never",
-    "deploy": "git pull && npm ci && npm run build && pm2 restart pdf-greencodes",
+    "app:dev": "tauri dev",
+    "app:build": "node scripts/conferir-motor.mjs && tauri build",
+    "tauri": "tauri",
+    "deploy": "bash scripts/instalar-site.sh",
+    "publicar-app": "node scripts/publicar-app.mjs",
     "tamanho": "node scripts/verificar-tamanho.js",
-    "verificar": "npm run tamanho && npm run typecheck && npm run test",
+    "verificar": "npm run tamanho && npm run typecheck && npm run test && npm run rust",
+    "rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "impressora": "node scripts/compilar-impressora.js",
     "motor": "motor\\runtime\\python.exe -m pytest motor/testes -q",
     "preparar-motor": "node scripts/preparar-motor.mjs",
     "conferir-motor": "node scripts/conferir-motor.mjs",
-    "provar-impressao": "electron scripts/provar-impressao.mjs"
+    "provar-impressao": "node scripts/provar-impressao.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.8.1",
+    "@tauri-apps/api": "^2.11.1",
     "heic-to": "^1.5.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.469.0",
@@ -35,86 +39,13 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   },
-  "description": "Ferramentas de PDF que rodam inteiras no navegador. Sem upload, sem servidor, sem conta.",
-  "main": "electron/main.js",
-  "build": {
-    "appId": "br.com.greencodes.pdf",
-    "productName": "PDF.GreenCodes",
-    "copyright": "GreenCodes",
-    "directories": {
-      "output": "dist-app",
-      "buildResources": "electron"
-    },
-    "files": [
-      "electron/**/*",
-      "out/**/*",
-      "package.json",
-      "!node_modules/**/*"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "electron/icone.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "PDF.GreenCodes",
-      "deleteAppDataOnUninstall": true,
-      "installerIcon": "electron/icone.ico",
-      "uninstallerIcon": "electron/icone.ico",
-      "installerHeaderIcon": "electron/icone.ico"
-    },
-    "fileAssociations": [
-      {
-        "ext": "pdf",
-        "name": "Documento PDF",
-        "role": "Editor",
-        "description": "Abrir no PDF.GreenCodes"
-      }
-    ],
-    "extraResources": [
-      {
-        "from": "motor",
-        "to": "recursos/motor",
-        "filter": [
-          "**/*",
-          "!**/__pycache__/**",
-          "!testes/**",
-          "!runtime/Lib/site-packages/pip/**",
-          "!runtime/Lib/site-packages/pip-*/**",
-          "!runtime/Lib/site-packages/pytest/**",
-          "!runtime/Lib/site-packages/_pytest/**",
-          "!runtime/Lib/site-packages/pytest-*/**",
-          "!runtime/Scripts/**"
-        ]
-      },
-      {
-        "from": "impressora",
-        "to": "recursos/impressora",
-        "filter": [
-          "impressora.exe"
-        ]
-      }
-    ],
-    "afterPack": "scripts/podar-idiomas.mjs"
-  }
+  "description": "Ferramentas de PDF que rodam inteiras no navegador. Sem upload, sem servidor, sem conta."
 }

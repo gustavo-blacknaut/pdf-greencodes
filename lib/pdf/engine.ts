@@ -25,15 +25,13 @@ import {
   excelToPdf,
   extractImages,
   imagesToPdf,
-  ocr,
   pdfToImages,
-  pdfToText,
-  pdfToWord,
   photoSheet,
   powerpointToPdf,
   textToPdf,
   wordToPdf,
 } from './operacoes/converter';
+import { ocr, pdfToText, pdfToWord } from './operacoes/texto';
 import { crop, edit, flatten, headerFooter, pageNumbers, resize, watermark } from './operacoes/editar';
 import { protect, setMetadata, stripMetadata, unlock } from './operacoes/seguranca';
 import { businessCards, cropMarks, labels, mirror, repeatPages, sequentialNumbering } from './operacoes/grafica';
@@ -53,6 +51,7 @@ import { addBleed, foldMarks, frenteEVerso, posterTiles, stampImage } from './op
 import { gerarCodigoBarras, gerarQrCode } from './operacoes/codigos';
 import { rodarNoPython, temMotorPython } from './motor-python';
 import type { RunContext, RunResult } from './tipos';
+import { formatBytes } from '../utils';
 
 /* A interface importa tudo daqui, então o que ela usa é reexportado. */
 export type {
@@ -144,6 +143,41 @@ export const OPERATIONS = {
 
 export type OperationId = keyof typeof OPERATIONS;
 
+/**
+ * Até aqui, um arquivo que ficou no disco ainda pode ser trazido para a
+ * memória, quando a ferramenta não passa pelo motor. Acima disso o pdf-lib
+ * pede vários múltiplos do tamanho, e a janela cai antes de terminar.
+ */
+const TRAZ_PARA_A_MEMORIA_ATE = 1024 * 1024 * 1024;
+
+/**
+ * A ferramenta não trabalha pelo caminho: traz o arquivo do disco, se couber.
+ *
+ * Só quem passa pelo motor Python abre o arquivo pelo caminho. O editor, o
+ * OCR, a proteção com permissões e os outros de JavaScript precisam do
+ * documento na memória.
+ */
+async function trazerParaAMemoria(ctx: RunContext): Promise<RunContext> {
+  if (!ctx.files.some((arquivo) => arquivo.caminho)) return ctx;
+  const grande = ctx.files.find((arquivo) => arquivo.caminho && arquivo.size > TRAZ_PARA_A_MEMORIA_ATE);
+  if (grande) {
+    throw new Error(
+      `"${grande.name}" tem ${formatBytes(grande.size)}, e esta ferramenta precisa abrir o documento inteiro na memória, o que não cabe. Comprimir, juntar, dividir, girar, numerar e as outras que usam o motor trabalham direto no disco, com arquivos de até 2 GB.`,
+    );
+  }
+  const { lerCaminho } = await import('../desktop');
+  const files = [];
+  for (const arquivo of ctx.files) {
+    if (!arquivo.caminho) {
+      files.push(arquivo);
+      continue;
+    }
+    ctx.onProgress(0, `Lendo ${arquivo.name}`);
+    files.push({ ...arquivo, bytes: await lerCaminho(arquivo.caminho), caminho: undefined });
+  }
+  return { ...ctx, files };
+}
+
 export async function runOperation(id: OperationId, ctx: RunContext): Promise<RunResult> {
   const operation = OPERATIONS[id];
   if (!operation) throw new Error(`Ferramenta desconhecida: ${id}`);
@@ -151,7 +185,9 @@ export async function runOperation(id: OperationId, ctx: RunContext): Promise<Ru
   // No aplicativo, as ferramentas que rasterizam página vão para o motor
   // Python: medido, 277 ms por página contra 1189 do pdf.js. No site
   // `temMotorPython` é sempre falso e nada muda.
-  const resultado = temMotorPython(id, ctx) ? await rodarNoPython(id, ctx) : await operation(ctx);
+  const resultado = temMotorPython(id, ctx)
+    ? await rodarNoPython(id, ctx)
+    : await operation(await trazerParaAMemoria(ctx));
 
   // `salvarPdf` devolve a senha ao resultado. O aviso fica aqui, num lugar só,
   // em vez de repetido em cada operação. Proteger e desbloquear ficam de fora:

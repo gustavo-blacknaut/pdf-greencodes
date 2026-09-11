@@ -16,6 +16,7 @@ import path from 'node:path';
 import { runOperation, type LoadedFile, type RunContext } from './engine';
 import { opcoesDoMotor, temMotorPython } from './motor-python';
 import { PonteDeTeste } from './ponte-de-teste';
+import { substituirMotorParaTeste, type MotorPython } from '../desktop';
 
 const RAIZ = process.cwd();
 const TEM_MOTOR = existsSync(path.join(RAIZ, 'motor', 'runtime', 'python.exe'));
@@ -28,25 +29,23 @@ if (!TEM_MOTOR) {
 const UM_MB = 1024 * 1024;
 
 let ponte: PonteDeTeste;
-let janelaAntes: unknown;
 
 beforeAll(() => {
   if (!TEM_MOTOR) return;
   ponte = new PonteDeTeste(RAIZ);
-  janelaAntes = (globalThis as { window?: unknown }).window;
 });
 
 afterAll(() => {
-  (globalThis as { window?: unknown }).window = janelaAntes;
+  substituirMotorParaTeste(null);
   ponte?.desligar();
 });
 
 async function comPython<T>(trabalho: () => Promise<T>): Promise<T> {
-  (globalThis as { window?: unknown }).window = { greenpdf: { ehAplicativo: true, motor: ponte.api } };
+  substituirMotorParaTeste(ponte.api as unknown as MotorPython);
   try {
     return await trabalho();
   } finally {
-    (globalThis as { window?: unknown }).window = undefined;
+    substituirMotorParaTeste(null);
   }
 }
 
@@ -275,4 +274,20 @@ comMotor('dividir por tamanho, pelo motor', () => {
   it('a conversão de MB para bytes não erra por mil', () => {
     expect(opcoesDoMotor('split', { mode: 'size', maxSize: 2 }).limiteBytes).toBe(2 * 1024 * 1024);
   });
+});
+
+comMotor('repetir páginas, pelo motor', () => {
+  it('a mesma foto repetida não entra no arquivo uma vez por cópia', async () => {
+    // O pdf-lib copia a imagem de novo a cada cópia: quatro repetições do
+    // documento saíam com quatro digitalizações de 1 MB dentro. Compactado,
+    // fica uma só, e as outras páginas apontam para ela.
+    const bytes = await documentoMisto();
+    const resultado = await comPython(async () =>
+      runOperation('repeat-pages', contexto(bytes.slice(0), { vezes: 4, modo: 'documento-inteiro' })),
+    );
+    expect(resultado.files[0].pages).toBe(16);
+    expect(resultado.outputBytes, 'quatro cópias da mesma digitalização ficaram no arquivo').toBeLessThan(
+      bytes.byteLength * 1.5,
+    );
+  }, 180_000);
 });

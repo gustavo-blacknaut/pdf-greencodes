@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 .next/
 out/
 build/
@@ -8,10 +8,19 @@ build/
 next-env.d.ts
 .DS_Store
 dados/
-dist-app/
 motor/runtime/
 impressora/impressora.exe
 **/__pycache__/
 .pytest_cache/
 
-dist-app/.prova-impressao/
+# O que o Tauri gera ao compilar: o target passa de 2 GB, e o gen/ e refeito
+# a cada build a partir do tauri.conf.json.
+src-tauri/target/
+src-tauri/gen/
+
+# A saida do build antigo, do Electron. Nao e mais gerada, mas continua nas
+# pastas de quem ja compilou a versao 3 - e tem o Python embutido inteiro.
+dist-app/
+
+# Saida do `npm run provar-impressao`: PDFs e PNGs de conferencia.
+.prova-impressao/

@@ -8,7 +8,16 @@
  * escolhida a dedo.
  */
 import { describe, expect, it } from 'vitest';
-import { ORDEM, TOOLS, TOOLS_DO_SITE, defaultOptions, getTool, isFieldVisible } from './tools';
+import {
+  FUNCIONAM_NO_SITE,
+  ORDEM,
+  TOOLS,
+  TOOLS_DO_SITE,
+  TOOLS_SO_NO_APLICATIVO,
+  defaultOptions,
+  getTool,
+  isFieldVisible,
+} from './tools';
 import { OPERATIONS } from './pdf/engine';
 
 /** O começo da grade é decisão de negócio: o que mais se usa no balcão. */
@@ -69,10 +78,22 @@ describe('o catálogo bate com o motor', () => {
     expect(new Set(rotas).size).toBe(rotas.length);
   });
 
-  it('o site mostra tudo menos o que depende do motor do aplicativo', () => {
-    const soNoApp = TOOLS.filter((t) => t.soNoAplicativo);
-    expect(TOOLS_DO_SITE).toHaveLength(TOOLS.length - soNoApp.length);
+  it('o site roda só a lista escolhida, e nada que precise do motor', () => {
+    expect(TOOLS_DO_SITE.map((t) => t.slug).sort()).toEqual([...FUNCIONAM_NO_SITE].sort());
     expect(TOOLS_DO_SITE.some((t) => t.soNoAplicativo)).toBe(false);
+  });
+
+  it('a lista do site não cita ferramenta que não existe', () => {
+    const existentes = new Set(TOOLS.map((t) => t.slug));
+    expect(FUNCIONAM_NO_SITE.filter((slug) => !existentes.has(slug))).toEqual([]);
+  });
+
+  it('toda ferramenta aparece no site: ou funciona lá, ou leva ao aplicativo', () => {
+    // Sumir do site era o que acontecia antes com as de motor. Agora cada uma
+    // é uma porta para o download, e nenhuma cai nos dois lados ao mesmo tempo.
+    expect(TOOLS_DO_SITE.length + TOOLS_SO_NO_APLICATIVO.length).toBe(TOOLS.length);
+    const nosDois = TOOLS_DO_SITE.filter((t) => TOOLS_SO_NO_APLICATIVO.includes(t));
+    expect(nosDois).toEqual([]);
   });
 });
 

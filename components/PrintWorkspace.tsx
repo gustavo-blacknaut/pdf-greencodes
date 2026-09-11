@@ -20,85 +20,37 @@ import {
 } from 'lucide-react';
 import { Dropzone } from './Dropzone';
 import { FilaDeArquivos } from './impressao/FilaDeArquivos';
+import {
+  ACEITA,
+  CHAVE_DAS_OPCOES,
+  OPCOES_PADRAO,
+  conversaoPara,
+  lerOpcoesSalvas,
+  proximoId,
+} from './impressao/fila';
 import { OpcoesDeImpressao } from './impressao/OpcoesDeImpressao';
 import { PreviaDaPagina, type FolhaNaTela } from './impressao/PreviaDaPagina';
+import type { EstadoDoItem, ItemFila } from './impressao/tipos';
 import { folhaEmMm, marcasDeCorte, marcasDeRegistro, passaDaFolha, posicionar, sobra } from '@/lib/impressao/layout';
 import { atividade } from '@/lib/atividade';
 import { vault } from '@/lib/ephemeral';
-import { IMAGE_ACCEPT } from '@/lib/ferramentas/tipos';
-import { inspectFile, runOperation, type OperationId } from '@/lib/pdf/engine';
-import { pareceSerImagem } from '@/lib/pdf/guards';
+import { inspectFile, runOperation } from '@/lib/pdf/engine';
 import { loadPdfJs, loadPdfLib } from '@/lib/pdf/lazy';
 import { validarFila } from '@/lib/pdf/guards';
 import {
+  aoSoltarArquivos,
   estaNoAplicativo,
   abrirPreferenciasDaImpressora,
   imprimirArquivo,
+  lerArquivoEscolhido,
   listarImpressoras,
+  materializar,
+  registrarUso,
+  tamanhoDe,
   type Impressora,
   type OpcoesImpressao,
 } from '@/lib/desktop';
 import { cx, formatBytes, replaceExtension } from '@/lib/utils';
-
-const CHAVE = 'greencodes:impressao';
-
-const PADRAO: OpcoesImpressao = {
-  copias: 1,
-  colorido: true,
-  paisagem: false,
-  duplex: 'simplex',
-  papel: 'A4',
-  dpi: 300,
-};
-
-const ACEITA = [
-  'application/pdf',
-  '.pdf',
-  // A mesma lista do resto do programa: sem isso, o imprimir recusava um
-  // WEBP que a ferramenta de converter abre sem reclamar.
-  ...IMAGE_ACCEPT,
-  '.docx',
-  '.xlsx',
-  '.pptx',
-  '.txt',
-];
-
-/** Qual operação transforma cada formato em PDF. PDF já chega pronto. */
-function conversaoPara(nome: string): OperationId | null {
-  const n = nome.toLowerCase();
-  if (n.endsWith('.pdf')) return null;
-  if (pareceSerImagem(n)) return 'images-to-pdf';
-  if (n.endsWith('.docx')) return 'word-to-pdf';
-  if (n.endsWith('.xlsx')) return 'excel-to-pdf';
-  if (n.endsWith('.pptx')) return 'powerpoint-to-pdf';
-  if (n.endsWith('.txt')) return 'text-to-pdf';
-  return null;
-}
-
-function lerSalvo(): OpcoesImpressao {
-  try {
-    const bruto = localStorage.getItem(CHAVE);
-    return bruto ? { ...PADRAO, ...JSON.parse(bruto) } : PADRAO;
-  } catch {
-    return PADRAO;
-  }
-}
-
-type Estado = 'esperando' | 'convertendo' | 'pronto' | 'erro' | 'impresso';
-
-type ItemFila = {
-  id: string;
-  nome: string;
-  origem: File | Blob;
-  nomeOriginal: string;
-  blob: Blob | null;
-  paginas: number;
-  estado: Estado;
-  erro?: string;
-};
-
-let contador = 0;
-const proximoId = () => `i${(contador += 1)}_${Date.now().toString(36)}`;
 
 export function PrintWorkspace() {
   const parametros = useSearchParams();
@@ -140,7 +92,7 @@ export function PrintWorkspace() {
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [noApp, setNoApp] = useState(false);
   const [impressoras, setImpressoras] = useState<Impressora[] | null>(null);
-  const [opcoes, setOpcoes] = useState<OpcoesImpressao>(PADRAO);
+  const [opcoes, setOpcoes] = useState<OpcoesImpressao>(OPCOES_PADRAO);
 
   /**
    * A folha e a arte em cima dela, em pixels de tela.
@@ -247,7 +199,7 @@ export function PrintWorkspace() {
 
   useEffect(() => {
     setNoApp(estaNoAplicativo());
-    setOpcoes(lerSalvo());
+    setOpcoes(lerOpcoesSalvas());
     void listarImpressoras().then((lista) => {
       setImpressoras(lista);
       setOpcoes((atual) => {
@@ -270,11 +222,50 @@ export function PrintWorkspace() {
           nomeOriginal,
           blob: null,
           paginas: 0,
-          estado: 'esperando' as Estado,
+          estado: 'esperando' as EstadoDoItem,
         };
       }),
     ]);
   }, []);
+
+  /**
+   * O que chega do seletor ou arrastado para a janela.
+   *
+   * A prévia desenha a página, então precisa dos bytes: o PDF grande que o
+   * seletor deixou no disco é lido aqui. A fila é lida por ref porque quem
+   * chama pode ser a inscrição no arrastar, montada uma vez só.
+   */
+  const filaRef = useRef(fila);
+  filaRef.current = fila;
+  const receberArquivos = useCallback(
+    async (arquivos: File[]) => {
+      try {
+        validarFila(
+          arquivos.map((a) => ({ name: a.name, size: tamanhoDe(a) })),
+          filaRef.current.map((i) => ({ size: i.origem.size })),
+        );
+        adicionar(await Promise.all(arquivos.map(materializar)));
+      } catch (e) {
+        setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
+      }
+    },
+    [adicionar],
+  );
+
+  // Soltar na janela do aplicativo: vem o caminho, como no seletor.
+  useEffect(
+    () =>
+      aoSoltarArquivos((lista) => {
+        void (async () => {
+          try {
+            receberArquivos(await Promise.all(lista.map(lerArquivoEscolhido)));
+          } catch (e) {
+            setErroGeral(e instanceof Error ? e.message : 'Não foi possível ler o arquivo.');
+          }
+        })();
+      }),
+    [receberArquivos],
+  );
 
   /** Arquivos vindos de outra ferramenta, guardados no cofre. */
   useEffect(() => {
@@ -617,7 +608,7 @@ export function PrintWorkspace() {
     setAviso(null);
     setErroGeral(null);
     try {
-      localStorage.setItem(CHAVE, JSON.stringify(opcoes));
+      localStorage.setItem(CHAVE_DAS_OPCOES, JSON.stringify(opcoes));
     } catch {
       /* modo anônimo: imprime do mesmo jeito */
     }
@@ -668,6 +659,8 @@ export function PrintWorkspace() {
         atividade.fechar(tarefa, 'erro', falhou);
       } else {
         enviados += 1;
+        // Só a quantidade: folhas e cópias, nunca o nome do arquivo.
+        registrarUso({ tipo: 'impressao', folhas: saida.paginas, copias: opcoes.copias ?? 1 });
         setFila((atual) => atual.map((i) => (i.id === alvo.id ? { ...i, estado: 'impresso' } : i)));
         atividade.fechar(tarefa, 'concluida', `${partes.length} trabalho(s) na impressora`);
       }
@@ -721,15 +714,7 @@ export function PrintWorkspace() {
             accept={ACEITA}
             acceptLabel="PDF, JPG, PNG, WebP, DOCX, XLSX, PPTX ou TXT"
             multiple
-            onFiles={(arquivos) => {
-              try {
-                validarFila(arquivos, []);
-              } catch (e) {
-                setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
-                return;
-              }
-              adicionar(arquivos);
-            }}
+            onFiles={(arquivos) => void receberArquivos(arquivos)}
           />
         </div>
       ) : (
@@ -763,15 +748,7 @@ export function PrintWorkspace() {
               aceita={ACEITA}
               onSelecionar={setSelecionado}
               onRemover={remover}
-              onAdicionar={(arquivos) => {
-                try {
-                  validarFila(arquivos, fila.map((i) => ({ size: i.origem.size })));
-                } catch (e) {
-                  setErroGeral(e instanceof Error ? e.message : 'Arquivos recusados.');
-                  return;
-                }
-                adicionar(arquivos);
-              }}
+              onAdicionar={(arquivos) => void receberArquivos(arquivos)}
             />
 
           </div>

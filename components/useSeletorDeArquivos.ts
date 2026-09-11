@@ -46,6 +46,26 @@ export function useSeletorDeArquivos({
 
   useEffect(() => setNoApp(estaNoAplicativo()), []);
 
+  /**
+   * O que vem com caminho — do diálogo ou arrastado para a janela — segue
+   * sempre por aqui: mostra na hora, lê em seguida, e o PDF grande fica no
+   * disco em vez de entrar na memória.
+   */
+  const receber = useCallback(
+    async (recebidos: ArquivoEscolhido[]) => {
+      const extensoes = accept.filter((tipo) => tipo.startsWith('.'));
+      const aceitos = recebidos.filter((e) => extensoes.some((ext) => e.nome.toLowerCase().endsWith(ext)));
+      if (!aceitos.length) {
+        onFalha?.([], `Esta ferramenta não abre ${recebidos.length === 1 ? 'este formato' : 'estes formatos'}.`);
+        return;
+      }
+      const lista = multiple ? aceitos : aceitos.slice(0, 1);
+      await lerEscolhidos(lista);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accept, multiple, onEscolhidos, onFalha, onFiles, onLendo],
+  );
+
   const abrir = useCallback(async () => {
     if (!noApp) {
       inputRef.current?.click();
@@ -54,8 +74,11 @@ export function useSeletorDeArquivos({
 
     const escolhidos = await escolherArquivos(accept.filter((tipo) => tipo.startsWith('.')));
     if (!escolhidos.length) return;
+    await lerEscolhidos(multiple ? escolhidos : escolhidos.slice(0, 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accept, multiple, noApp, onEscolhidos, onFalha, onFiles, onLendo]);
 
-    const lista = multiple ? escolhidos : escolhidos.slice(0, 1);
+  async function lerEscolhidos(lista: ArquivoEscolhido[]) {
     onEscolhidos?.(lista);
 
     const cancelar = onLendo
@@ -82,7 +105,7 @@ export function useSeletorDeArquivos({
     } finally {
       cancelar();
     }
-  }, [accept, multiple, noApp, onEscolhidos, onFalha, onFiles, onLendo]);
+  }
 
   /** O que o consumidor precisa pôr num `<input type="file">` escondido. */
   const inputProps = {
@@ -98,5 +121,5 @@ export function useSeletorDeArquivos({
     },
   };
 
-  return { abrir, inputProps, noApp };
+  return { abrir, receber, inputProps, noApp };
 }

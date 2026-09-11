@@ -9,13 +9,15 @@
 /**
  * Tetos do navegador.
  *
- * Uma aba não tem a memória da máquina inteira: ela tem o que o navegador
- * deixa, e um PDF de 400 MB aberto pelo pdf-lib pede vários múltiplos disso.
- * Passar daqui não trava um arquivo, trava a aba.
+ * 200 MB por trabalho, somando a fila, e sem limite de páginas: é o site das
+ * tarefas do dia a dia, e o que passa disso tem o aplicativo, que aceita GB.
+ * Decisão do Gustavo (2026-09-11). Também é onde a aba se aguenta: um PDF de
+ * 400 MB aberto pelo pdf-lib pede vários múltiplos disso de memória, e passar
+ * daqui não trava um arquivo, trava a aba.
  */
 const LIMITES_NAVEGADOR = {
-  bytesPorArquivo: 150 * 1024 * 1024,
-  bytesTotais: 1024 * 1024 * 1024,
+  bytesPorArquivo: 200 * 1024 * 1024,
+  bytesTotais: 200 * 1024 * 1024,
   arquivos: 100,
   miniaturas: 300,
   tempoOperacaoMs: 5 * 60 * 1000,
@@ -59,9 +61,13 @@ export const LIMITES = new Proxy({} as typeof LIMITES_NAVEGADOR, {
 });
 
 export class ArquivoRejeitado extends Error {
-  constructor(message: string) {
+  /** A saída é o aplicativo: a tela mostra o botão de baixar junto. */
+  readonly sugereAplicativo: boolean;
+
+  constructor(message: string, sugereAplicativo = false) {
     super(message);
     this.name = 'ArquivoRejeitado';
+    this.sugereAplicativo = sugereAplicativo;
   }
 }
 
@@ -139,6 +145,9 @@ export function pareceMesmoDocx(bytes: ArrayBuffer): boolean {
 }
 
 export function formatarLimite(bytes: number): string {
+  const gb = bytes / (1024 * 1024 * 1024);
+  // "2 GB", e não "2048 MB": é o número que a pessoa vê no Explorador.
+  if (gb >= 1) return `${Number.isInteger(gb) ? gb : gb.toFixed(1).replace('.', ',')} GB`;
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
@@ -147,21 +156,31 @@ export function validarFila(
   novos: { name: string; size: number }[],
   jaNaFila: { size: number }[],
 ): void {
+  // No site, o que passa do limite tem para onde ir. No aplicativo, não:
+  // ali o teto é a memória da máquina, e o conselho é dividir.
+  const oAppResolve = !noAplicativo;
+
   const grande = novos.find((f) => f.size > LIMITES.bytesPorArquivo);
   if (grande) {
     throw new ArquivoRejeitado(
-      `"${grande.name}" tem ${formatarLimite(grande.size)} e o limite por arquivo é ${formatarLimite(LIMITES.bytesPorArquivo)}. Acima disso a memória do navegador não dá conta.`,
+      oAppResolve
+        ? `"${grande.name}" tem ${formatarLimite(grande.size)}, e o site aceita até ${formatarLimite(LIMITES.bytesPorArquivo)}. Para arquivo grande, use o aplicativo para Windows: ele abre até ${formatarLimite(LIMITES_APLICATIVO.bytesPorArquivo)}.`
+        : `"${grande.name}" tem ${formatarLimite(grande.size)} e o limite por arquivo é ${formatarLimite(LIMITES.bytesPorArquivo)}.`,
+      oAppResolve,
     );
   }
 
   if (jaNaFila.length + novos.length > LIMITES.arquivos) {
-    throw new ArquivoRejeitado(`Máximo de ${LIMITES.arquivos} arquivos por vez.`);
+    throw new ArquivoRejeitado(`Máximo de ${LIMITES.arquivos} arquivos por vez.`, oAppResolve);
   }
 
   const total = [...jaNaFila, ...novos].reduce((soma, f) => soma + f.size, 0);
   if (total > LIMITES.bytesTotais) {
     throw new ArquivoRejeitado(
-      `A fila somaria ${formatarLimite(total)} e o limite é ${formatarLimite(LIMITES.bytesTotais)}. Processe em lotes menores.`,
+      oAppResolve
+        ? `Os arquivos somam ${formatarLimite(total)}, e o site aceita até ${formatarLimite(LIMITES.bytesTotais)} por vez. Para mais que isso, use o aplicativo para Windows.`
+        : `A fila somaria ${formatarLimite(total)} e o limite é ${formatarLimite(LIMITES.bytesTotais)}. Processe em lotes menores.`,
+      oAppResolve,
     );
   }
 }

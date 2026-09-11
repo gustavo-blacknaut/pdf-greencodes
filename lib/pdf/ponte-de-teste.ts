@@ -1,5 +1,5 @@
 /**
- * Uma ponte para o motor Python que funciona fora do Electron.
+ * Uma ponte para o motor Python que funciona fora do aplicativo.
  *
  * Existe para o teste poder rodar os dois motores no mesmo arquivo e comparar
  * a saída. Sem isto, `temMotorPython` é sempre falso em Node e o caminho do
@@ -14,6 +14,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { substituirMotorParaTeste, type MotorPython } from '../desktop';
 
 type Passo = { fracao: number; mensagem: string };
 
@@ -51,7 +53,7 @@ export class PonteDeTeste {
     }
   }
 
-  /** O objeto que a interface espera encontrar em `window.greenpdf.motor`. */
+  /** O mesmo formato que `motorPython()` devolve no aplicativo. */
   get api() {
     return {
       executar: (acao: string, pedido: Record<string, unknown>) =>
@@ -93,12 +95,11 @@ export class PonteDeTeste {
   /** Liga a ponte, roda o que foi pedido, e desliga — mesmo se estourar. */
   static async com<T>(raiz: string, trabalho: (ponte: PonteDeTeste) => Promise<T>): Promise<T> {
     const ponte = new PonteDeTeste(raiz);
-    const janelaAntes = (globalThis as { window?: unknown }).window;
-    (globalThis as { window?: unknown }).window = { greenpdf: { ehAplicativo: true, motor: ponte.api } };
+    substituirMotorParaTeste(ponte.api as unknown as MotorPython);
     try {
       return await trabalho(ponte);
     } finally {
-      (globalThis as { window?: unknown }).window = janelaAntes;
+      substituirMotorParaTeste(null);
       ponte.desligar();
     }
   }

@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { CATEGORIES, TOOLS_DO_SITE, rotaDaFerramenta } from '@/lib/tools';
+import { Download } from 'lucide-react';
+import { CATEGORIES, TOOLS, TOOLS_DO_SITE, rotaDaFerramenta } from '@/lib/tools';
 
 export function Footer() {
   return (
@@ -11,6 +12,9 @@ export function Footer() {
             Ferramentas de PDF que rodam dentro do navegador. Sem upload, sem fila e sem conta. O resultado sai da
             memória assim que o download termina.
           </p>
+          <Link href="/baixar" className="btn-ghost mt-5 inline-flex">
+            <Download className="h-4 w-4" /> Aplicativo para Windows · {TOOLS.length} ferramentas
+          </Link>
         </div>
 
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">

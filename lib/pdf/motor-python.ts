@@ -367,10 +367,19 @@ export async function rodarNoPython(id: string, ctx: RunContext): Promise<RunRes
   try {
     ctx.onProgress(0.02, 'Preparando o arquivo');
 
+    // O arquivo que ficou no disco entra por link, sem atravessar a janela;
+    // o que veio para a memória é gravado na pasta de trabalho.
     const caminhos: string[] = [];
     for (const arquivo of ctx.files) {
-      caminhos.push(await motor.gravarEntrada(pasta, arquivo.name, arquivo.bytes));
+      caminhos.push(
+        arquivo.caminho
+          ? await motor.vincularEntrada(pasta, arquivo.caminho)
+          : await motor.gravarEntrada(pasta, arquivo.name, arquivo.bytes),
+      );
     }
+    // Com entrada no disco, a saída também não volta para a memória: vai
+    // direto para Downloads, e a tela recebe só onde ela está.
+    const noDisco = ctx.files.some((arquivo) => arquivo.caminho);
 
     // Sem `saida`, o motor nomeia sozinho ao lado da entrada — que é esta
     // pasta temporária. Sai `contrato-comprimido.pdf` em vez de um "saida"
@@ -382,17 +391,17 @@ export async function rodarNoPython(id: string, ctx: RunContext): Promise<RunRes
       senhas: ctx.files.map((arquivo) => arquivo.senha ?? ''),
     })) as Record<string, unknown>;
 
-    ctx.onProgress(0.92, 'Lendo o resultado');
+    ctx.onProgress(0.92, noDisco ? 'Levando o resultado para Downloads' : 'Lendo o resultado');
 
-    const files = await lerSaidas(motor, dados);
-    const outputBytes = files.reduce((total, arquivo) => total + arquivo.blob.size, 0);
+    const files = noDisco ? await entregarSaidas(motor, dados) : await lerSaidas(motor, dados);
+    const outputBytes = files.reduce((total, arquivo) => total + (arquivo.tamanho ?? arquivo.blob.size), 0);
 
     ctx.onProgress(1);
     return {
       files,
       inputBytes: ctx.files.reduce((total, arquivo) => total + arquivo.size, 0),
       outputBytes,
-      notes: Array.isArray(dados.notas) ? (dados.notas as string[]) : [],
+      notes: notasDoMotor(dados.notas),
       highlightSavings: id === 'compress',
     };
   } finally {
@@ -402,23 +411,68 @@ export async function rodarNoPython(id: string, ctx: RunContext): Promise<RunRes
   }
 }
 
-/** O motor devolve `arquivo` (um) ou `arquivos` (vários); os dois viram Blob. */
-async function lerSaidas(
-  motor: NonNullable<ReturnType<typeof motorPython>>,
-  dados: Record<string, unknown>,
-): Promise<OutputFile[]> {
+/**
+ * Quantas páginas, só quando o motor mandou um número.
+ *
+ * Nem toda operação usa `paginas` para isso: a cobertura de tinta manda ali a
+ * medição de cada página, e a tela escrevia "[object Object],[object Object]"
+ * no lugar da contagem.
+ */
+function contagemDePaginas(valor: unknown): number | undefined {
+  return typeof valor === 'number' && Number.isFinite(valor) ? valor : undefined;
+}
+
+/** As notas que são texto. Qualquer outra coisa não tem como aparecer na tela. */
+export function notasDoMotor(valor: unknown): string[] {
+  return Array.isArray(valor) ? valor.filter((nota): nota is string => typeof nota === 'string') : [];
+}
+
+type Motor = NonNullable<ReturnType<typeof motorPython>>;
+
+/** O motor devolve `arquivo` (um) ou `arquivos` (vários). */
+function saidasDoMotor(dados: Record<string, unknown>): { arquivo: string; paginas?: unknown }[] {
   const lista = Array.isArray(dados.arquivos)
-    ? (dados.arquivos as { arquivo: string; paginas?: number }[])
+    ? (dados.arquivos as { arquivo: string; paginas?: unknown }[])
     : typeof dados.arquivo === 'string'
-      ? [{ arquivo: dados.arquivo, paginas: dados.paginas as number | undefined }]
+      ? [{ arquivo: dados.arquivo, paginas: dados.paginas }]
       : [];
-
   if (lista.length === 0) throw new Error('O motor terminou sem gerar arquivo nenhum.');
+  return lista;
+}
 
+const nomeDe = (caminho: string) => caminho.split(/[\\/]/).pop() ?? 'arquivo';
+
+/** Traz cada saída para a memória, como Blob. */
+async function lerSaidas(motor: Motor, dados: Record<string, unknown>): Promise<OutputFile[]> {
   const saidas: OutputFile[] = [];
-  for (const item of lista) {
+  for (const item of saidasDoMotor(dados)) {
     const lido = await motor.lerSaida(item.arquivo);
-    saidas.push({ name: lido.nome, blob: new Blob([lido.bytes]), pages: item.paginas });
+    saidas.push({ name: lido.nome, blob: new Blob([lido.bytes]), pages: contagemDePaginas(item.paginas) });
+  }
+  return saidas;
+}
+
+/**
+ * Leva cada saída direto para Downloads, sem ler.
+ *
+ * É o caminho do arquivo grande: 2 GB que o motor gravou só mudam de pasta.
+ * A tela fica com o nome, o tamanho e onde o arquivo está — o suficiente para
+ * abrir, mostrar na pasta e contar.
+ */
+async function entregarSaidas(motor: Motor, dados: Record<string, unknown>): Promise<OutputFile[]> {
+  const saidas: OutputFile[] = [];
+  for (const item of saidasDoMotor(dados)) {
+    const entregue = await motor.entregar(item.arquivo);
+    if (!entregue.ok || !entregue.caminho) {
+      throw new Error(entregue.erro ?? 'Não foi possível levar o resultado para Downloads.');
+    }
+    saidas.push({
+      name: nomeDe(item.arquivo),
+      blob: new Blob([]),
+      pages: contagemDePaginas(item.paginas),
+      caminho: entregue.caminho,
+      tamanho: entregue.tamanho ?? 0,
+    });
   }
   return saidas;
 }

@@ -1,0 +1,2 @@
+# Script que roda na VPS: com CRLF o bash le "set -euo pipefail\r" e morre.
+*.sh text eol=lf

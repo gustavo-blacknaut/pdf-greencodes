@@ -1,8 +1,9 @@
 # PDF.GreenCodes
 
-60 ferramentas que rodam inteiras na sua máquina. Sem upload, sem servidor, sem conta.
-Roda como site em [pdf.greencodes.com.br](https://pdf.greencodes.com.br) e como aplicativo de
-desktop no Windows.
+74 ferramentas de PDF e de gráfica que rodam inteiras na sua máquina. Sem upload, sem servidor,
+sem conta. As 20 do dia a dia estão no site, [pdf.greencodes.com.br](https://pdf.greencodes.com.br);
+todas as 74 estão no aplicativo para Windows, que é grátis:
+[baixar](https://github.com/gustavo-blacknaut/pdf-greencodes-app/releases/latest/download/PDF.GreenCodes-Setup.exe).
 
 O aplicativo foi feito para gráfica: converte RGB para CMYK sem rasterizar, imprime em 600 e
 1200 DPI, chega no tipo de papel do driver da impressora, e o preto puro sai **C20 M20 Y0 K100** em
@@ -13,6 +14,31 @@ npm install
 npm run dev          # site em http://localhost:3000
 npm run app:dev      # aplicativo de desktop
 ```
+
+---
+
+## Site e aplicativo: um código, dois produtos
+
+O mesmo código gera os dois. O que muda é quanto cada um entrega:
+
+| | Site | Aplicativo para Windows |
+|---|---|---|
+| Ferramentas | 20, as do dia a dia (como o iLovePDF) | todas as 74 |
+| Tamanho | até **200 MB** por vez, sem limite de páginas | até **2 GB** por arquivo, direto do disco |
+| Motor de PDF | o do navegador (pdf.js, pdf-lib) | PyMuPDF, até 16 vezes mais rápido |
+| Resultado | você baixa | aparece sozinho em Downloads |
+| Impressão | — | escala, posição, espelho, marcas, papel do driver |
+
+As outras 54 ferramentas **aparecem no site** com o selo *App*: cada uma tem página, descrição e o
+botão de baixar, em vez de sumir. Arquivo acima de 200 MB é recusado com o mesmo botão junto, e o
+resultado de cada ferramenta mostra quanto mais rápido o aplicativo faria — só onde isso foi medido.
+
+Quais ferramentas o site roda é uma lista só, `FUNCIONAM_NO_SITE` em `lib/tools.ts`. Mudar o que
+o site oferece é mexer ali e em nada mais; um teste impede que entre na lista uma ferramenta que
+precisa do motor do aplicativo.
+
+O botão de download pede `releases/latest/download/PDF.GreenCodes-Setup.exe`: cada release leva
+o instalador também com esse nome fixo, e é o `npm run publicar-app` que cuida disso.
 
 ---
 
@@ -36,7 +62,7 @@ coisa que importa aqui — **o documento não sai da máquina em nenhum dos dois
 
 ---
 
-## As 60 ferramentas
+## As ferramentas
 
 | Organizar | Editar | Converter | Otimizar e cor | Privacidade |
 |---|---|---|---|---|
@@ -159,9 +185,19 @@ O app não é o site numa janela. Ele faz o que só um programa instalado conseg
 - **Menu do botão direito no Explorador.** Clique em um PDF e escolha *Abrir no PDF.GreenCodes*.
   Selecione vários e escolha *Juntar com o PDF.GreenCodes* — todos chegam de uma vez, porque a
   chave usa `MultiSelectModel=Player` em vez de abrir uma janela por arquivo.
-- **Salva sozinho em `Downloads/PDF.GreenCodes`.** O nome é o primeiro número livre — `1.pdf`,
-  `2.pdf`, `3.pdf`. Quem processa vinte documentos seguidos não quer escolher pasta e nome vinte
-  vezes. Também há o diálogo nativo, e um atalho *Mostrar na pasta*.
+- **Salva sozinho, solto em `Downloads`.** Assim que o trabalho termina, sem precisar abrir nada.
+  O nome é um número longo como os IDs do Discord — `1548006973622902784.pdf` —, que nunca repete
+  e cresce com o tempo: o arquivo mais novo é sempre o de número maior. Também há o diálogo nativo,
+  e um atalho *Mostrar na pasta*.
+- **Arquivo de até 2 GB.** PDF acima de 256 MB não entra na memória da janela: o motor abre direto
+  do disco (por um link físico na pasta de trabalho, instantâneo) e o resultado é movido direto
+  para Downloads. Medido com um PDF de 1,21 GB: entra na fila em meio segundo, juntar leva 2,8 s,
+  dividir em 189 arquivos 4,6 s, e a memória da janela sobe menos de 50 MB.
+- **Arrastar e soltar.** O arquivo solto na janela segue o mesmo caminho do diálogo — inclusive o
+  de arquivo grande.
+- **Seu uso.** Quantas vezes cada ferramenta rodou, quantas impressões, quantas folhas, quantos
+  arquivos salvos. Só números: o registro recusa qualquer coisa que não seja o identificador da
+  ferramenta, então nome de arquivo e conteúdo não têm como entrar. Fica no computador.
 - **Sem prazo de expiração.** O contador de 10 minutos some: o disco é seu. Se o arquivo era só
   para imprimir agora, dá para marcar *Apagar sozinho em 1 dia* — por arquivo, e a marca pode ser
   posta ou tirada depois de salvar.
@@ -169,7 +205,8 @@ O app não é o site numa janela. Ele faz o que só um programa instalado conseg
 - **Vive na bandeja** e inicia com o Windows em modo oculto, sem pular na cara ao ligar o computador.
 
 ```bash
-npm run app:build    # gera o instalador em dist-app/
+npm run app:dev      # abre o aplicativo a partir do código
+npm run app:build    # gera o instalador em src-tauri/target/release/bundle/nsis/
 ```
 
 As duas integrações (menu do botão direito e início automático) são opcionais e ficam no menu da
@@ -178,23 +215,44 @@ programa padrão do `.pdf` e somem junto com o perfil do usuário.
 
 ### Como o app é montado por dentro
 
-A interface é servida por um **servidor HTTP local**, e não por `file://`, porque o pdf.js carrega o
-worker com `new URL(...)` e o protocolo de arquivo bloqueia isso. O servidor só entrega o que está
-dentro de `out/`, com trava de diretório testada contra travessia codificada em percentual.
+O aplicativo é **Tauri 2**: a casca é Rust (`src-tauri/`) e a tela é o WebView2 que já vem no
+Windows. Não leva um Chromium inteiro junto como o Electron levava — o executável tem 11 MB, e o
+instalador, com o Python do motor dentro, 37 MB.
 
-A janela roda com `contextIsolation` e `sandbox` ligados: a página não tem Node nem acesso ao disco.
-Tudo que ela consegue fazer passa por uma lista fechada de canais em `electron/preload.js`, cada um
-validado do outro lado. Não existe `invoke` genérico de propósito — assim uma falha na interface não
-vira acesso ao sistema de arquivos.
+A janela não tem acesso ao disco nem ao sistema. Ela só consegue duas coisas: chamar os 30 comandos
+de `src-tauri/src/main.rs` e ouvir os avisos que eles mandam. Os plugins de `fs` e `shell` ficaram
+de fora de propósito — dariam à página o disco e o terminal inteiros se um PDF malicioso
+conseguisse rodar script. Cada comando valida o que recebe do lado do Rust: nome de arquivo nunca
+vira caminho, e limpar pasta temporária só apaga o que está dentro da temporária do motor.
+
+E o Rust só aceita de volta os caminhos que ele mesmo entregou (`src-tauri/src/permitidos.rs`): o
+que a pessoa escolheu no diálogo, soltou na janela, abriu pelo Explorador, ou o que o programa
+salvou. Ler, abrir no programa padrão, gravar numa pasta ou mandar o motor abrir qualquer outro
+caminho é recusado — senão a janela pediria `ler_arquivo("...senhas.txt")`, abriria
+`cmd.exe` ou gravaria na pasta de Inicializar do Windows. Testado no aplicativo rodando, com sete
+tentativas desse tipo, todas recusadas.
+
+Três cuidados que custaram defeito real para aprender:
+
+- **Todo comando demorado é `async`.** No Tauri, comando sem `async` roda na linha que desenha a
+  janela: um desenho de 141 páginas deixava o programa *Não respondendo*, sem barra de progresso.
+- **Os bytes viajam crus**, pelo canal `ipc.localhost`. Se a política de segurança da página
+  bloquear esse endereço, o Tauri cai calado num canal reserva que passa tudo por JSON, e o PDF
+  chegava como a lista de números `37,80,68...`. Por isso o `layout.tsx` libera o canal no build do
+  aplicativo, e a ponte (`lib/desktop.ts`) reconstrói os bytes se algum dia chegarem pelo reserva.
+- **O stderr do Python é sempre esvaziado.** Cano cheio trava o motor no meio da escrita, e o
+  MuPDF avisa bastante em PDF mal formado. Se o motor morre, quem esperava resposta recebe o
+  motivo — a última linha do erro dele — e o próximo pedido sobe um motor novo.
 
 ### Três linguagens, e por que cada uma
 
-O aplicativo usa JavaScript, Python e C#. Não por gosto: cada parte foi para onde a alternativa
-media pior.
+O aplicativo usa TypeScript, Rust, Python e C#. Não por gosto: cada parte foi para onde a
+alternativa media pior.
 
 | Parte | Linguagem | Por quê |
 |---|---|---|
 | Interface | TypeScript / React | É a mesma tela do site. Escrever duas vezes seria manter duas. |
+| Casca do aplicativo | Rust (Tauri 2) | Janela, disco, diálogos e processos, sem carregar um Chromium de 150 MB. |
 | Motor de PDF | Python (PyMuPDF) | Velocidade medida, não suposta. |
 | Impressão | C# (.NET Framework) | É o único caminho até o driver da impressora. |
 
@@ -412,18 +470,38 @@ PDF original não são preservados. Para digitalizado, rode o OCR antes.
 
 Next.js 16 (App Router, Turbopack, saída estática) · React 19 · TypeScript · Tailwind CSS 4 ·
 [@cantoo/pdf-lib](https://www.npmjs.com/package/@cantoo/pdf-lib) · pdf.js · [tesseract.js](https://github.com/naptha/tesseract.js) ·
-JSZip · Vitest · Electron 33.
+JSZip · Vitest.
 
-No aplicativo, mais dois: **Python 3.12 embutido com [PyMuPDF](https://pymupdf.readthedocs.io/)**
-(o motor de PDF) e **C# / .NET Framework** (a impressão). Nenhum dos dois precisa estar instalado
-na máquina — o Python vai junto no instalador e o C# é compilado pelo `csc.exe` do próprio Windows.
+No aplicativo, mais três: **Rust com [Tauri 2](https://tauri.app/)** (a casca),
+**Python 3.12 embutido com [PyMuPDF](https://pymupdf.readthedocs.io/)** (o motor de PDF) e
+**C# / .NET Framework** (a impressão). Nenhum precisa estar instalado na máquina da loja — o Rust
+vira o próprio executável, o Python vai junto no instalador e o C# é compilado pelo `csc.exe` do
+próprio Windows. Para compilar o aplicativo, sim, precisa do Rust (`rustup`).
 
 ## Deploy
 
+### O site, na VPS
+
+Um comando, na VPS (Linux com Node 20 ou mais novo):
+
 ```bash
-npm run build
+curl -fsSL https://raw.githubusercontent.com/gustavo-blacknaut/pdf-greencodes-app/main/scripts/instalar-site.sh | bash
 ```
 
-O conteúdo de `out/` são arquivos estáticos: sobe em Vercel, Netlify, Cloudflare Pages, GitHub
-Pages, S3 ou qualquer servidor de arquivos. Não há variável de ambiente, banco nem storage para
-configurar.
+Na primeira vez ele baixa o código em `~/pdf-greencodes`, gera o site e deixa rodando no pm2 em
+`127.0.0.1:5069`, atrás do nginx. Rodar de novo atualiza para o último `main`. Sem nginx na frente,
+`HOST=0.0.0.0` expõe direto; `PASTA` e `PORT` mudam onde e em que porta. Dentro da pasta, o mesmo
+é `npm run deploy`.
+
+O conteúdo de `out/` são arquivos estáticos: também sobe em Vercel, Netlify, Cloudflare Pages ou
+qualquer servidor de arquivos. Não há variável de ambiente, banco nem storage para configurar.
+
+### O aplicativo, no GitHub
+
+```bash
+npm run app:build                   # gera o instalador
+npm run publicar-app -- notas.md    # release com o instalador anexado, nos dois nomes
+```
+
+A versão mora em três lugares — `package.json`, `src-tauri/Cargo.toml` e
+`src-tauri/tauri.conf.json` —, e o `publicar-app` recusa publicar se eles não baterem.

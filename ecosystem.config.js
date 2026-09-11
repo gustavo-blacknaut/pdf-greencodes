@@ -16,9 +16,9 @@ module.exports = {
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
-        PORT: 5069,
-        // Atrás do nginx. Para expor direto na internet, troque por 0.0.0.0.
-        HOST: '127.0.0.1',
+        PORT: process.env.PORT || 5069,
+        // Atrás do nginx. Sem nginx, suba com HOST=0.0.0.0 para expor direto.
+        HOST: process.env.HOST || '127.0.0.1',
       },
       max_memory_restart: '200M',
       autorestart: true,

@@ -1,68 +1,65 @@
 /**
- * Prova a geometria da impressão sem gastar papel.
+ * Prova a impressão sem gastar papel.
  *
- * O defeito relatado foi "está imprimindo um A5 no meio do A4". A causa: o
- * CSS declarava a folha pelo **nome** (`@page { size: A4 }`), que traz a
- * orientação junto, enquanto a orientação de verdade ia separada, no
- * `landscape` da chamada. Com os dois discordando, o driver encolhia o
- * trabalho por 210/297 — 0,707 — e a arte saía com metade da área no meio da
- * folha.
+ * O defeito relatado foi "está imprimindo um A5 no meio do A4". A geometria da
+ * folha é conferida pelos testes de `lib/impressao/folha.test.ts`, que são
+ * matemática pura e rodam em milissegundos. O que eles **não** alcançam é a
+ * pergunta final: a folha que montamos, entregue ao `impressora.exe` e ao
+ * driver do Windows, cai inteira no papel?
  *
- * Os testes de unidade provam que o CSS agora pede milímetros na ordem certa.
- * O que eles **não** alcançam é a pergunta final: o Chromium, recebendo esse
- * HTML com essas opções, entrega uma folha inteira?
+ * Aqui a impressora "Microsoft Print to PDF" responde. Ela é o mesmo caminho
+ * de qualquer impressora de verdade — passa pelo spooler, pelo DEVMODE e pelo
+ * `PrintDocument` — só que o resultado sai num arquivo que dá para medir.
  *
- * Aqui o `printToPDF` responde. Ele passa pela mesma montagem de página do
- * `print`, e o PDF que sai pode ser medido — primeiro a folha, e depois, pelo
- * MuPDF, onde a tinta caiu dentro dela.
- *
- * Conferido reintroduzindo o defeito de propósito: a folha deitada volta a
- * 50,1% de cobertura, metade exata da área, e o script reprova.
+ * E a medição não é por amostragem: o PDF gerado guarda a matriz que posiciona
+ * a imagem na página, em pontos. Lendo `MediaBox` e essa matriz sabemos o
+ * tamanho da folha **e** o tamanho da tinta dentro dela — que é o par que
+ * denuncia o defeito. Medir só a folha teria aprovado o defeito original sem
+ * piscar: a folha nunca esteve errada.
  *
  *   npm run provar-impressao
  */
 
-import { app, BrowserWindow } from 'electron';
-import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { deflateSync } from 'node:zlib';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { deflateSync, inflateSync } from 'node:zlib';
 
+const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const IMPRESSORA_EXE = path.join(RAIZ, 'impressora', 'impressora.exe');
+const PASTA = path.join(RAIZ, '.prova-impressao');
 const PT_POR_MM = 72 / 25.4;
-const A4 = { largura: 210, altura: 297 };
+const DPI = 300;
 
-/** Lê o montarHtml do módulo sem carregar o resto, como o teste de unidade faz. */
-function carregarMontarHtml() {
-  const arquivo = path.join(process.cwd(), 'electron', 'impressao.js');
-  const fonte = readFileSync(arquivo, 'utf8');
-  const corpo = fonte.slice(fonte.indexOf('const PAPEL_MM'), fonte.indexOf('async function preparar'));
-  const montar = fonte.slice(fonte.indexOf('const AJUSTES'), fonte.indexOf('/** Espera as imagens'));
-  return new Function('path', `${corpo}\n${montar}\nreturn montarHtml;`)(path);
-}
+/** Os papéis da tela, em milímetros e sempre em pé, com o código do driver. */
+const PAPEIS = {
+  A3: { largura: 297, altura: 420, codigo: 8 },
+  A4: { largura: 210, altura: 297, codigo: 9 },
+  A5: { largura: 148, altura: 210, codigo: 11 },
+  Letter: { largura: 216, altura: 279, codigo: 1 },
+};
+
+/* ------------------------------------------------------------ a folha de teste */
 
 /**
- * Uma "página" toda preta, na medida pedida.
+ * Uma folha toda preta, na medida exata do papel.
  *
- * A proporção importa e já enganou este script. Com uma arte de 4 por 3 numa
- * folha A4 em pé, o ajuste "cabe na página" deixa branco em cima e embaixo
- * **por causa da proporção** — 53% de cobertura, que parece o defeito e não
- * é. Dando à arte a mesma proporção da folha, o certo passa a ser 100%, e
- * qualquer branco que sobre é encolhimento de verdade.
- *
- * Sai em PNG, e não num formato mais simples de escrever à mão: o Chromium
- * não decodifica PPM nem PGM, e a página carregaria sem a imagem — o que
- * mediria a folha certa por acaso, com o HTML vazio.
+ * A proporção importa e já enganou um script destes: com uma arte de proporção
+ * diferente da folha, sobra branco **por causa da proporção** e isso parece o
+ * defeito sem ser. Dando à folha de teste a medida exata do papel, o certo
+ * passa a ser cobrir tudo, e qualquer sobra é encolhimento de verdade.
  */
-function paginaDeTeste(pasta, nome, largura, altura) {
-  const crcTabela = new Uint32Array(256);
+function folhaDeTeste(destino, larguraPx, alturaPx) {
+  const tabela = new Uint32Array(256);
   for (let n = 0; n < 256; n += 1) {
     let c = n;
     for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    crcTabela[n] = c >>> 0;
+    tabela[n] = c >>> 0;
   }
   const crc = (dados) => {
     let c = 0xffffffff;
-    for (const b of dados) c = crcTabela[(c ^ b) & 0xff] ^ (c >>> 8);
+    for (const b of dados) c = tabela[(c ^ b) & 0xff] ^ (c >>> 8);
     return (c ^ 0xffffffff) >>> 0;
   };
   const pedaco = (tipo, corpo) => {
@@ -75,171 +72,256 @@ function paginaDeTeste(pasta, nome, largura, altura) {
   };
 
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(largura, 0);
-  ihdr.writeUInt32BE(altura, 4);
-  ihdr[8] = 8; // bits por canal
-  ihdr[9] = 0; // tons de cinza
+  ihdr.writeUInt32BE(larguraPx, 0);
+  ihdr.writeUInt32BE(alturaPx, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 0;
 
-  // Uma linha de filtro zero mais os pixels, tudo em preto.
-  const bruto = Buffer.alloc(altura * (1 + largura), 0);
-  const idat = deflateSync(bruto);
-
-  const png = path.join(pasta, nome);
+  const bruto = Buffer.alloc(alturaPx * (1 + larguraPx), 0);
   writeFileSync(
-    png,
+    destino,
     Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       pedaco('IHDR', ihdr),
-      pedaco('IDAT', idat),
+      pedaco('IDAT', deflateSync(bruto)),
       pedaco('IEND', Buffer.alloc(0)),
     ]),
   );
-  return png;
+  return destino;
 }
 
-/**
- * As medidas da folha, lidas do PDF gerado.
- *
- * Atenção ao que isto **não** responde. A primeira versão deste script parava
- * aqui, e teria aprovado o defeito original sem piscar: a folha nunca esteve
- * errada. O que estava errado era a arte, encolhida por 0,707 no meio de uma
- * folha do tamanho certo.
- *
- * Por isso o script grava os PDFs e a medição de tinta é feita depois, pelo
- * MuPDF, que sabe rasterizar. Ver `provar-impressao.py`.
- */
-function medirFolha(pdf) {
+/* ------------------------------------------------------------------- medição */
+
+/** O tamanho da folha, lido do MediaBox. */
+function folhaDoPdf(pdf) {
   const texto = pdf.toString('latin1');
-  const caixa = texto.match(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/);
+  const caixa = texto.match(/\/MediaBox\s*\[\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*\]/);
   if (!caixa) throw new Error('não achei o MediaBox no PDF gerado');
   return {
-    larguraMm: (Number(caixa[3]) - Number(caixa[1])) / PT_POR_MM,
-    alturaMm: (Number(caixa[4]) - Number(caixa[2])) / PT_POR_MM,
+    largura: (Number(caixa[3]) - Number(caixa[1])) / PT_POR_MM,
+    altura: (Number(caixa[4]) - Number(caixa[2])) / PT_POR_MM,
   };
 }
 
-/**
- * Uma janela só para os dois casos.
- *
- * Destruir e recriar entre um caso e outro fazia o segundo `loadFile` voltar
- * `ERR_FAILED`: a janela nova nascia enquanto a anterior ainda estava sendo
- * desmontada. Reaproveitar evita a corrida — e é o que o aplicativo faz de
- * verdade, uma janela escondida por trabalho.
- */
-async function gerar(janela, html, opcoes) {
-  await janela.loadFile(html);
-  // O `print` de verdade espera as imagens carregarem antes; aqui o mesmo.
-  await janela.webContents.executeJavaScript(
-    'Promise.all([...document.images].map((i) => i.complete ? 0 : new Promise((p) => { i.onload = p; i.onerror = p; })))',
-  );
-  // O mesmo que o enviar() faz: posicionar so depois de as imagens
-  // carregarem, senao o tamanho real de cada pagina e zero.
-  await janela.webContents.executeJavaScript('window.__posicionar ? (window.__posicionar(), true) : false');
-  return janela.webContents.printToPDF(opcoes);
+/** Multiplica duas matrizes de PDF: primeiro `m`, depois `n`. */
+function compor(m, n) {
+  return [
+    m[0] * n[0] + m[1] * n[2],
+    m[0] * n[1] + m[1] * n[3],
+    m[2] * n[0] + m[3] * n[2],
+    m[2] * n[1] + m[3] * n[3],
+    m[4] * n[0] + m[5] * n[2] + n[4],
+    m[4] * n[1] + m[5] * n[3] + n[5],
+  ];
 }
 
-async function principal() {
-  await app.whenReady();
+/**
+ * O tamanho da tinta, lido da matriz que posiciona a imagem.
+ *
+ * `/Xxx Do` desenha a imagem num quadrado de lado 1, e é a matriz corrente que
+ * a estica até o tamanho de verdade. Corrente, e não a última: o "Microsoft
+ * Print to PDF" abre a página com `0.75 0 0 0.75 0 0 cm` para trabalhar em 96
+ * por polegada em vez de 72, e ler só o `cm` colado no `Do` dá um terço a mais
+ * — foi assim que uma folha perfeita apareceu aqui como 177% de cobertura.
+ *
+ * Então as matrizes são compostas, com a pilha de `q` e `Q`, como um leitor de
+ * PDF faria. Aí a medida é exata, sem amostragem.
+ */
+function tintaDoPdf(pdf) {
+  let maior = null;
 
-  const montarHtml = carregarMontarHtml();
-  // Os PDFs ficam num lugar conhecido: quem mede a tinta e o MuPDF, depois.
-  const pasta = path.join(process.cwd(), 'dist-app', '.prova-impressao');
-  mkdirSync(pasta, { recursive: true });
+  for (const fluxo of fluxos(pdf)) {
+    const simbolos = fluxo.toString('latin1').split(/\s+/);
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const pilha = [];
 
-  const casos = [
-    { nome: 'A4 em pé', paisagem: false, esperado: A4, arte: [420, 594] },
-    { nome: 'A4 deitada', paisagem: true, esperado: { largura: A4.altura, altura: A4.largura }, arte: [594, 420] },
-    // Metade do tamanho, no centro: a tinta tem que cobrir um quarto da área.
-    { nome: 'A4 a 100%', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'original', dpi: 72 }, cobertura: [0.97, 1.01] },
-    { nome: 'A4 a 50%', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'porcento', escalaPorcento: 50, dpi: 72 }, cobertura: [0.24, 0.26] },
-    // Marcas de corte: a arte encolhe e aparecem oito riscos em volta.
-    // 60% da folha da 36% de area; as oito marcas somam quase nada.
-    { nome: 'com marcas', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'porcento', escalaPorcento: 60, dpi: 72, marcasCorte: true }, cobertura: [0.35, 0.38] },
-    // Deslocada 20 mm para a direita: parte sai da folha e a tinta cai.
-    { nome: 'deslocada', paisagem: false, esperado: A4, arte: [595, 842], extras: { escala: 'original', dpi: 72, deslocaXmm: 20 }, cobertura: [0.88, 0.92] },
-  ];
+    for (let i = 0; i < simbolos.length; i += 1) {
+      const simbolo = simbolos[i];
 
-  const janela = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
-  const casos_medidos = [];
-  let falhou = false;
-
-  for (const caso of casos) {
-    // A arte tem a proporção da folha: assim o certo é cobrir tudo, e
-    // qualquer sobra de branco é encolhimento de verdade.
-    const pagina = paginaDeTeste(pasta, `arte-${caso.paisagem ? 'deitada' : 'em-pe'}.png`, caso.arte[0], caso.arte[1]);
-    const html = path.join(pasta, `folha-${caso.paisagem ? 'deitada' : 'em-pe'}.html`);
-    writeFileSync(
-      html,
-      montarHtml([pagina], 'A4', { paisagem: caso.paisagem, margemLadosMm: 0, margemCimaMm: 0, ajuste: 'pagina', ...(caso.extras ?? {}) }),
-      'utf8',
-    );
-
-    const pdf = await gerar(janela, html, {
-      pageSize: 'A4',
-      landscape: caso.paisagem,
-      margins: { marginType: 'none' },
-      printBackground: true,
-    });
-
-    const apelido = caso.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-    writeFileSync(path.join(pasta, apelido + '.pdf'), pdf);
-    casos_medidos.push({ arquivo: apelido + '.pdf', nome: caso.nome, cobertura: caso.cobertura ?? [0.97, 1.01] });
-    const medida = medirFolha(pdf);
-    const alvo = caso.esperado;
-    const bate =
-      Math.abs(medida.larguraMm - alvo.largura) < 2 && Math.abs(medida.alturaMm - alvo.altura) < 2;
-
-    console.log(
-      `  ${caso.nome.padEnd(12)} folha ${medida.larguraMm.toFixed(0)}x${medida.alturaMm.toFixed(0)} mm ` +
-        `(esperado ${alvo.largura}x${alvo.altura})  ${bate ? 'OK' : 'ERRADO'}`,
-    );
-
-    if (!bate) {
-      falhou = true;
-      const encolhimento = medida.larguraMm / alvo.largura;
-      if (Math.abs(encolhimento - 0.707) < 0.05) {
-        console.log('     ^ 0,707 é a assinatura do defeito antigo: o CSS e o driver discordando.');
+      if (simbolo === 'q') {
+        pilha.push([...ctm]);
+      } else if (simbolo === 'Q') {
+        ctm = pilha.pop() ?? [1, 0, 0, 1, 0, 0];
+      } else if (simbolo === 'cm' && i >= 6) {
+        const m = simbolos.slice(i - 6, i).map(Number);
+        if (m.every(Number.isFinite)) ctm = compor(m, ctm);
+      } else if (simbolo === 'Do' && i >= 1 && simbolos[i - 1].startsWith('/')) {
+        const largura = Math.hypot(ctm[0], ctm[1]) / PT_POR_MM;
+        const altura = Math.hypot(ctm[2], ctm[3]) / PT_POR_MM;
+        if (!Number.isFinite(largura) || !Number.isFinite(altura)) continue;
+        if (!maior || largura * altura > maior.largura * maior.altura) {
+          maior = { largura, altura, x: ctm[4] / PT_POR_MM, y: ctm[5] / PT_POR_MM };
+        }
       }
     }
   }
 
-  janela.destroy();
-
-  if (falhou) {
-    console.log('\nREPROVOU já na medida da folha.');
-    app.exit(1);
-    return;
-  }
-
-  /*
-   * A medida da folha não basta, e é o ponto todo deste script: a folha nunca
-   * esteve errada. O que estava errado era a arte, encolhida por 0,707 no
-   * meio de uma folha do tamanho certo.
-   *
-   * Quem sabe rasterizar aqui é o MuPDF, então a segunda metade roda no
-   * Python do motor. Chamar daqui, em vez de encadear no `npm run`, evita o
-   * caminho com barra invertida — que o cmd do Windows come.
-   */
-  // A lista do que medir, para o Python saber o que esperar de cada folha.
-  writeFileSync(path.join(pasta, 'casos.json'), JSON.stringify(casos_medidos, null, 1));
-
-  console.log('\n  Medindo onde a tinta caiu...\n');
-  const python = path.join(process.cwd(), 'motor', 'runtime', 'python.exe');
-  const medicao = spawnSync(python, [path.join('scripts', 'provar-impressao.py')], { encoding: 'utf8' });
-
-  if (medicao.error) {
-    console.log(`  não consegui rodar o motor (${medicao.error.message}).`);
-    console.log('  Os PDFs ficaram em', pasta);
-    app.exit(2);
-    return;
-  }
-
-  process.stdout.write(medicao.stdout ?? '');
-  if (medicao.stderr?.trim()) process.stderr.write(medicao.stderr);
-  app.exit(medicao.status ?? 0);
+  return maior;
 }
 
-principal().catch((erro) => {
-  console.error('falhou:', erro.message);
-  app.exit(2);
-});
+/** Todo fluxo do PDF, descomprimido quando dá. */
+function* fluxos(pdf) {
+  const marca = Buffer.from('stream');
+  const fim = Buffer.from('endstream');
+  let de = 0;
+
+  while (de < pdf.length) {
+    const inicio = pdf.indexOf(marca, de);
+    if (inicio === -1) return;
+    const termina = pdf.indexOf(fim, inicio);
+    if (termina === -1) return;
+
+    // Pula o "stream" e a quebra de linha que vem logo depois dele.
+    let corpo = inicio + marca.length;
+    if (pdf[corpo] === 0x0d) corpo += 1;
+    if (pdf[corpo] === 0x0a) corpo += 1;
+
+    const bruto = pdf.subarray(corpo, termina);
+    try {
+      yield inflateSync(bruto);
+    } catch {
+      yield bruto;
+    }
+    de = termina + fim.length;
+  }
+}
+
+/* ------------------------------------------------------------------ impressão */
+
+function impressoraVirtual() {
+  const saida = execFileSync(IMPRESSORA_EXE, ['listar'], { encoding: 'utf8' });
+  const nomes = (JSON.parse(saida).impressoras ?? []).map((item) => item.nome);
+  return nomes.find((nome) => /print to pdf/i.test(nome)) ?? null;
+}
+
+function imprimir(impressora, imagem, destino, papel, paisagem) {
+  const lista = path.join(PASTA, 'folhas.txt');
+  writeFileSync(lista, imagem, 'utf8');
+  rmSync(destino, { force: true });
+
+  const argumentos = [
+    'imprimir',
+    '--impressora', impressora,
+    '--paginas', lista,
+    '--papel', String(papel),
+    '--arquivo', destino,
+    '--titulo', 'prova de impressao',
+  ];
+  if (paisagem) argumentos.push('--paisagem');
+
+  execFileSync(IMPRESSORA_EXE, argumentos, { encoding: 'utf8' });
+  return esperarOArquivo(destino);
+}
+
+/**
+ * O spooler escreve o PDF depois que o `Print()` já voltou.
+ *
+ * Ler cedo demais pega o arquivo pela metade, e o MediaBox sai de um PDF
+ * truncado. Esperar o tamanho parar de crescer é o sinal de que terminou.
+ */
+function esperarOArquivo(destino, limiteMs = 30_000) {
+  const ate = Date.now() + limiteMs;
+  let anterior = -1;
+  let estavel = 0;
+
+  while (Date.now() < ate) {
+    if (existsSync(destino)) {
+      const agora = readFileSync(destino).length;
+      if (agora > 0 && agora === anterior) {
+        estavel += 1;
+        if (estavel >= 2) return readFileSync(destino);
+      } else {
+        estavel = 0;
+      }
+      anterior = agora;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+  }
+  throw new Error(`o PDF não apareceu em ${destino}`);
+}
+
+/* ---------------------------------------------------------------- o programa */
+
+function principal() {
+  if (!existsSync(IMPRESSORA_EXE)) {
+    console.error('Não achei o impressora.exe. Rode antes: npm run impressora');
+    return 1;
+  }
+
+  const impressora = impressoraVirtual();
+  if (!impressora) {
+    console.log('Nenhuma impressora "Print to PDF" instalada; nada para provar aqui.');
+    return 0;
+  }
+
+  mkdirSync(PASTA, { recursive: true });
+  console.log(`Provando pela "${impressora}", a ${DPI} DPI.\n`);
+
+  const casos = [
+    { papel: 'A4', paisagem: false },
+    { papel: 'A4', paisagem: true },
+    { papel: 'A5', paisagem: false },
+    { papel: 'A3', paisagem: false },
+    { papel: 'Letter', paisagem: false },
+  ];
+
+  let falhou = false;
+
+  for (const caso of casos) {
+    const medida = PAPEIS[caso.papel];
+    const folha = caso.paisagem
+      ? { largura: medida.altura, altura: medida.largura }
+      : { largura: medida.largura, altura: medida.altura };
+
+    const apelido = `${caso.papel}${caso.paisagem ? '-deitada' : ''}`;
+    const imagem = folhaDeTeste(
+      path.join(PASTA, `${apelido}.png`),
+      Math.round((folha.largura * DPI) / 25.4),
+      Math.round((folha.altura * DPI) / 25.4),
+    );
+
+    const pdf = imprimir(
+      impressora,
+      imagem,
+      path.join(PASTA, `${apelido}.pdf`),
+      medida.codigo,
+      caso.paisagem,
+    );
+
+    const saiu = folhaDoPdf(pdf);
+    const tinta = tintaDoPdf(pdf);
+
+    const folhaBate =
+      Math.abs(saiu.largura - folha.largura) < 2 && Math.abs(saiu.altura - folha.altura) < 2;
+    const cobertura = tinta
+      ? (tinta.largura * tinta.altura) / (folha.largura * folha.altura)
+      : 0;
+    const tintaBate = cobertura > 0.97 && cobertura < 1.03;
+    const ok = folhaBate && tintaBate;
+    if (!ok) falhou = true;
+
+    console.log(
+      `  ${apelido.padEnd(12)} folha ${saiu.largura.toFixed(0)}x${saiu.altura.toFixed(0)} mm ` +
+        `(pedido ${folha.largura}x${folha.altura})   ` +
+        `tinta ${tinta ? `${tinta.largura.toFixed(0)}x${tinta.altura.toFixed(0)} mm, ${(cobertura * 100).toFixed(1)}%` : 'não achei'}` +
+        `   ${ok ? 'OK' : 'ERRADO'}`,
+    );
+
+    if (!folhaBate) {
+      console.log(`     ^ a folha saiu no tamanho errado: o --papel ${medida.codigo} não pegou.`);
+    } else if (tinta && cobertura > 0.45 && cobertura < 0.55) {
+      console.log('     ^ metade da área: o encolhimento de 0,707 voltou.');
+    } else if (!tintaBate) {
+      console.log('     ^ a arte não preencheu a folha.');
+    }
+  }
+
+  console.log(
+    falhou
+      ? '\nREPROVOU — a impressão não está entregando a folha inteira.'
+      : '\nA folha sai inteira, do tamanho pedido, nos cinco papéis.',
+  );
+  return falhou ? 1 : 0;
+}
+
+process.exit(principal());

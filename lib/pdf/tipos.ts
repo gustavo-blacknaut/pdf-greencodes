@@ -21,12 +21,24 @@ export type LoadedFile = {
   /** Senha informada pela pessoa. Vive só nesta aba e nunca é gravada. */
   senha?: string;
   error?: string;
+  /**
+   * Arquivo grande que ficou no disco, no aplicativo: `bytes` vem vazio, e
+   * só o motor Python, que abre pelo caminho, trabalha com ele.
+   */
+  caminho?: string;
 };
 
 export type OutputFile = {
   name: string;
   blob: Blob;
   pages?: number;
+  /**
+   * Onde o resultado já está gravado, quando ele foi direto do motor para
+   * Downloads sem passar pela memória. Aí o `blob` vem vazio, e o tamanho é
+   * este.
+   */
+  caminho?: string;
+  tamanho?: number;
 };
 
 export type RunResult = {

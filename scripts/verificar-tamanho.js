@@ -17,7 +17,7 @@ const path = require('node:path');
 
 const LIMITE = 800;
 const AVISO = 600;
-const PASTAS = ['app', 'components', 'lib', 'electron', 'scripts'];
+const PASTAS = ['app', 'components', 'lib', 'scripts'];
 const EXTENSOES = new Set(['.ts', '.tsx', '.js']);
 
 /** Arquivo que não é nosso, ou que é gerado, não conta. */

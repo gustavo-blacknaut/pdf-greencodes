@@ -121,9 +121,49 @@ export const TOOLS: Tool[] = [...CATALOGO].sort(
 );
 
 /**
- * As que o site mostra: tudo menos o que só funciona no aplicativo.
+ * O que funciona no site. O resto aparece lá com o selo "Só no aplicativo" e
+ * o botão de baixar, em vez de sumir.
+ *
+ * Decisão do Gustavo (2026-09-11): o site é a porta de entrada, com o básico
+ * — o que o iLovePDF oferece —, e o trabalho de gráfica fica no aplicativo,
+ * que é mais rápido e aceita arquivo de GB. Mudar o que o site oferece é
+ * mexer só nesta lista.
+ *
+ * Ferramenta que precisa do motor do aplicativo (`soNoAplicativo`) não entra
+ * nem se for listada aqui: no navegador ela não teria como funcionar.
  */
-export const TOOLS_DO_SITE: Tool[] = TOOLS.filter((tool) => !tool.soNoAplicativo);
+export const FUNCIONAM_NO_SITE = [
+  'comprimir-pdf',
+  'juntar-pdf',
+  'dividir-pdf',
+  'organizar-paginas',
+  'remover-paginas',
+  'extrair-paginas',
+  'girar-pdf',
+  'pdf-para-jpg',
+  'jpg-para-pdf',
+  'word-para-pdf',
+  'pdf-para-word',
+  'excel-para-pdf',
+  'powerpoint-para-pdf',
+  'assinar-pdf',
+  'numerar-paginas',
+  'marca-dagua',
+  'proteger-pdf',
+  'desbloquear-pdf',
+  'reparar-pdf',
+  'gerar-qrcode',
+];
+
+export function funcionaNoSite(tool: Tool): boolean {
+  return !tool.soNoAplicativo && FUNCIONAM_NO_SITE.includes(tool.slug);
+}
+
+/** As que rodam no site, na ordem da grade. */
+export const TOOLS_DO_SITE: Tool[] = TOOLS.filter(funcionaNoSite);
+
+/** As que o site mostra só para levar ao aplicativo. */
+export const TOOLS_SO_NO_APLICATIVO: Tool[] = TOOLS.filter((tool) => !funcionaNoSite(tool));
 
 export const CATEGORIES = [
   'Otimizar',

@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Dropzone } from './Dropzone';
+import { ErroDaFerramenta } from './ErroDaFerramenta';
 import { FilaDeArquivos, type ArquivoNaFila } from './FilaDeArquivos';
 import { OptionField } from './OptionField';
 import { PageBoard } from './PageBoard';
@@ -33,6 +34,7 @@ import {
   type RunResult,
 } from '@/lib/pdf/engine';
 import {
+  ArquivoRejeitado,
   AVISO_ARQUIVO_GRANDE,
   LIMITES,
   OperacaoCancelada,
@@ -43,7 +45,14 @@ import {
 import { getEngineStatus, subscribeEngineStatus, warmEngine, type EngineStatus } from '@/lib/pdf/lazy';
 import { defaultOptions, isFieldVisible, type BoardMode, type Tool } from '@/lib/tools';
 import { cx, formatBytes } from '@/lib/utils';
-import { aoReceberArquivosDoSistema, estaNoAplicativo, type ArquivoEscolhido } from '@/lib/desktop';
+import {
+  aoReceberArquivosDoSistema,
+  aoSoltarArquivos,
+  estaNoAplicativo,
+  registrarUso,
+  tamanhoDe,
+  type ArquivoEscolhido,
+} from '@/lib/desktop';
 
 const BOARD_HINTS: Record<BoardMode, string> = {
   organize: 'Arraste as miniaturas para reordenar. Passe o mouse numa página para girar ou excluir.',
@@ -64,6 +73,8 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const [progress, setProgress] = useState({ fraction: 0, label: '' });
   const [result, setResult] = useState<{ id: string; data: RunResult; elapsed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // O erro tem saída no aplicativo (arquivo acima do limite do site).
+  const [sugerirApp, setSugerirApp] = useState(false);
   // Separado do erro de propósito: o fluxo normal limpa o erro a cada passo,
   // e o aviso de arquivo grande sumiria antes de alguém ler.
   const [aviso, setAviso] = useState<string | null>(null);
@@ -122,6 +133,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const mostrarEscolhidos = useCallback(
     (escolhidos: ArquivoEscolhido[]) => {
       setError(null);
+      setSugerirApp(false);
       setAviso(null);
       try {
         validarFila(
@@ -130,6 +142,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Arquivo recusado.');
+        setSugerirApp(e instanceof ArquivoRejeitado && e.sugereAplicativo);
         return;
       }
 
@@ -175,6 +188,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
   const addFiles = useCallback(
     (incoming: File[]) => {
       setError(null);
+      setSugerirApp(false);
       // Juntar aceita PDF e imagem ao mesmo tempo, então não dá para tratar
       // "aceita PDF" como "só aceita PDF".
       const aceitaPdf = tool.accept.includes('.pdf');
@@ -201,9 +215,13 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       }
 
       try {
-        validarFila(accepted, tool.multiple ? items : []);
+        validarFila(
+          accepted.map((file) => ({ name: file.name, size: tamanhoDe(file) })),
+          tool.multiple ? items : [],
+        );
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Arquivo recusado.');
+        setSugerirApp(e instanceof ArquivoRejeitado && e.sugereAplicativo);
         return;
       }
 
@@ -216,7 +234,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         item: {
           id: marcadores.get(file.name) ?? nextId(),
           name: file.name,
-          size: file.size,
+          size: tamanhoDe(file),
           loading: true,
           etapa: 'Abrindo o documento...',
         } satisfies ArquivoNaFila,
@@ -275,6 +293,22 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
     onLendo: marcarLeitura,
     onFalha: descartarMarcadores,
   });
+
+  // Arquivo arrastado para a janela do aplicativo: o mesmo trilho do diálogo.
+  // Durante um trabalho, espera; com o resultado na tela, começa outro.
+  const faseRef = useRef(phase);
+  faseRef.current = phase;
+  const receber = seletor.receber;
+  useEffect(
+    () =>
+      aoSoltarArquivos((lista) => {
+        if (tool.semArquivo || faseRef.current === 'running') return;
+        if (faseRef.current === 'done') reset();
+        void receber(lista);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [receber, tool.semArquivo],
+  );
 
   /** Destrava um PDF protegido com a senha que a pessoa digitou. */
   async function destravar(id: string, senha: string) {
@@ -364,6 +398,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       resultIdRef.current = null;
     }
     setError(null);
+    setSugerirApp(false);
     setResult(null);
     setPhase('running');
     setProgress({ fraction: 0, label: 'Preparando...' });
@@ -407,6 +442,14 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       const entry = vault.store(data.files, estaNoAplicativo() ? SEM_PRAZO : DEFAULT_TTL_MS);
       resultIdRef.current = entry.id;
       setResult({ id: entry.id, data, elapsed: performance.now() - startedAt });
+      // Só números: quantas vezes, quantos arquivos, páginas e bytes.
+      registrarUso({
+        tipo: 'ferramenta',
+        slug: tool.slug,
+        arquivos: ready.length,
+        paginas: totalPages,
+        bytes: totalBytes,
+      });
       atividade.fechar(tarefa, 'concluida', `${data.files.length} arquivo(s) gerado(s)`);
       setPhase('done');
     } catch (e) {
@@ -460,12 +503,7 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
         </div>
       )}
 
-      {error && (
-        <div className="flex gap-2.5 rounded-xl border border-rose-500/40 bg-rose-500/5 p-3 text-xs leading-relaxed text-rose-500">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && <ErroDaFerramenta erro={error} sugerirApp={sugerirApp} />}
 
       {phase === 'running' ? (
         <div>
@@ -572,17 +610,29 @@ export function ToolWorkspace({ tool }: { tool: Tool }) {
       </header>
 
       {phase === 'done' && result ? (
-        <ResultPanel entryId={result.id} result={result.data} elapsedMs={result.elapsed} onReset={reset} />
-      ) : items.length === 0 && !tool.semArquivo ? (
-        <Dropzone
-          accept={tool.accept}
-                  onEscolhidos={mostrarEscolhidos}
-                  onLendo={marcarLeitura}
-                  onFalha={descartarMarcadores}
-          acceptLabel={tool.acceptLabel}
-          multiple={tool.multiple}
-          onFiles={addFiles}
+        <ResultPanel
+          entryId={result.id}
+          result={result.data}
+          elapsedMs={result.elapsed}
+          operacao={tool.operation}
+          onReset={reset}
         />
+      ) : items.length === 0 && !tool.semArquivo ? (
+        <div className="space-y-4">
+          {/* Sem isto, o arquivo recusado antes de entrar na fila sumia sem
+              mensagem: o erro só era desenhado no painel de opções, que ainda
+              não existe enquanto a tela é só a área de soltar. */}
+          {error && <ErroDaFerramenta erro={error} sugerirApp={sugerirApp} />}
+          <Dropzone
+            accept={tool.accept}
+            onEscolhidos={mostrarEscolhidos}
+            onLendo={marcarLeitura}
+            onFalha={descartarMarcadores}
+            acceptLabel={tool.acceptLabel}
+            multiple={tool.multiple}
+            onFiles={addFiles}
+          />
+        </div>
       ) : tool.editor ? (
         ready[0]?.data ? (
           <div className="space-y-4">
